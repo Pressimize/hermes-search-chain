@@ -12,7 +12,7 @@ It is the search counterpart of [hermes-extract-chain](https://github.com/Pressi
 flowchart LR
     Q[query] --> E[Exa<br>highlights capped]
     E -- results --> R[results]
-    E -- error / no results / no key / paused --> P[Parallel<br>mode advanced]
+    E -- error / no results / no key / paused --> P[Parallel<br>mode agentic]
     P -- results --> R
     P -- error / no results / no key / paused --> F[Firecrawl]
     F -- results --> R
@@ -37,6 +37,8 @@ They come from a comparison of seven search providers on 80 queries without an L
 | Parallel, as Hermes calls it | 72 | 8,200 characters | 2.9 s |
 | Parallel, `/v1/search`, mode `advanced` | 70 | 8,400 characters | 1.8 s |
 | TinyFish, Brave, Tavily, Keenable | 50 to 54 | | |
+
+The times of the capped Exa call and of `/v1/search` were measured as direct calls, the others through Hermes, so they are not comparable across rows; inside Hermes both Parallel calls took about 3 s and Exa about 2 s (see *Validation*).
 
 Exa and Parallel are not distinguishable on this data; a difference of a few queries is within the day-to-day variation of the providers. Firecrawl ran on the 20 hardest queries and got 16, against 19 and 18. Exa comes first because the capped call returns the least text for the same hits and is the fastest; it also has the smallest free allowance, so the chain moves on to Parallel during the month. Details: [docs/design.md](docs/design.md).
 
@@ -109,13 +111,31 @@ When a pause starts, `logs/errors.log` gets a line such as `search-chain: exa pa
 
 ## Settings
 
-One optional setting in the profile's `.env`:
+Two optional settings in the profile's `.env`:
 
 ```bash
 SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS=600   # default; 0 = Exa's own highlight length (about three times the text)
+SEARCH_CHAIN_PARALLEL_API=beta         # default: the call Hermes makes; v1 = /v1/search in mode advanced
 ```
 
-Exa returns excerpts ("highlights") per result. Capped at 600 characters, a search of five results is about 4,000 characters instead of 12,000, with no detectable loss of hits in the comparison. The comparison ran without an LLM, so whether a model answers worse from shorter excerpts is not measured; set `0` to switch the cap off.
+Exa returns excerpts ("highlights") per result. Capped at 600 characters, a search of five results is about 4,000 characters instead of 12,000, with no detectable loss of hits in the comparison. In the end-to-end test (see *Validation*) the model answered all 36 questions correctly with and without the cap; the cap saved a third of the input tokens on error-message questions, where Exa's own highlights are long, and nothing on version questions. Set `0` to switch the cap off.
+
+Parallel is called on its beta endpoint in mode `agentic`, exactly as Hermes' built-in provider does. `v1` moves the stage to the GA endpoint `/v1/search` in mode `advanced`; see the FAQ.
+
+## Validation
+
+- **Unit tests** without network for every rule of the chain, the provider calls and the settings.
+- **End-to-end with a model** (2026-10-10, Hermes Desktop 0.21.6, model GLM 5.3): 36 questions in German (10 facts, 10 error messages, 16 "latest version of X"), each asked once in four setups through Hermes' real tool path, 144 runs. No run failed, and the intended stage served every search.
+
+  | | Exa capped | Exa uncapped | Parallel `/v1/search` | Parallel beta (as Hermes) |
+  |---|---|---|---|---|
+  | Correct answers, of 36 | 36 | 36 | 34 | 36 |
+  | Time per search, median | 1.8 s | 2.0 s | 3.3 s | 3.0 s |
+  | Input tokens, all questions | 430,606 | 484,082 | 497,072 | 494,759 |
+
+  Two blind judges scored all answers and agreed on every one. With 36 questions only large differences would show; the answers are at the ceiling, so the setups differ in effort, not in correctness.
+- **Fallback:** with an invalid Exa key the log showed `exa=http_401 parallel=ok`, with invalid Exa and Parallel keys `exa=http_401 parallel=http_401 firecrawl=ok`; the model got usable results both times.
+- **Not verified:** a really used-up quota (HTTP 402 and the 24-hour pause).
 
 ## Update and uninstall
 
@@ -140,7 +160,7 @@ grep -o "search-chain: .*" logs/agent.log | grep -o "[a-z]*=ok" | sort | uniq -c
 
 - **Fixed providers and order.**
 - **No results is an error.** If no service finds anything, the model gets an error with `no results` instead of an empty list, because Hermes caches every successful result for `web.cache_ttl_minutes` (default 20).
-- **Different result lengths.** Exa (capped) returns about 4,000 characters per search, Parallel about 8,400, Firecrawl about 3,900.
+- **Different result lengths.** Exa (capped) returns about 4,000 characters per search, Parallel about 8,200, Firecrawl about 3,900.
 - **Parallel's quota replies are not documented.** The chain moves on after any failure; only the 24-hour pause depends on the status code being 402.
 - **After a restart** the first search asks every service again, including one with a used-up quota. Without a restart, a renewed or topped-up quota is used only after the 24-hour pause.
 - **Privacy.** Every query is sent to Exa, and possibly to Parallel and Firecrawl.
@@ -151,8 +171,8 @@ grep -o "search-chain: .*" logs/agent.log | grep -o "[a-z]*=ok" | sort | uniq -c
 **Why not reuse Hermes' built-in Exa, Parallel and Firecrawl providers?**
 They need vendor SDKs that Hermes installs on first use. Calling the REST APIs directly needs nothing extra, gives exact status codes, and reaches Exa's highlight cap, which the built-in provider does not expose.
 
-**Why Parallel's `/v1/search` in mode `advanced`?**
-Hermes 0.21.6 calls Parallel's beta endpoint, which Parallel's documentation reserves for existing integrations. In the comparison, `advanced` on `/v1/search` showed no detectable difference to it and was faster. Mode `fast` on `/v1/search` was clearly worse (49 of 75) and is not used.
+**Which Parallel endpoint, and why?**
+The beta endpoint in mode `agentic`, the call Hermes 0.21.6 makes. Measured twice against `/v1/search` in mode `advanced`, it was never worse (72 against 70 of 75 queries without a model, 36 against 34 of 36 questions with a model) and equally fast inside Hermes. The differences are not statistically firm, but nothing measured favours `/v1/search`. Parallel reserves the beta endpoint for existing integrations; if it is switched off, set `SEARCH_CHAIN_PARALLEL_API=v1`. Mode `fast` on `/v1/search` was clearly worse (49 of 75) and is not offered.
 
 **Does it merge or re-rank results from several services?**
 No. A simulation on the comparison data showed no measurable gain from merging; all results of one search come from one service.

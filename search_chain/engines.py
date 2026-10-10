@@ -9,7 +9,9 @@ from __future__ import annotations
 import httpx
 
 EXA_URL = "https://api.exa.ai/search"
-PARALLEL_URL = "https://api.parallel.ai/v1/search"
+PARALLEL_URL = "https://api.parallel.ai/v1beta/search"  # A2, D2: the call Hermes' built-in provider makes
+PARALLEL_BETA = "search-extract-2025-10-10"
+PARALLEL_V1_URL = "https://api.parallel.ai/v1/search"
 FIRECRAWL_URL = "https://api.firecrawl.dev/v2/search"
 
 # A0: timeout per request in seconds (httpx applies it to each phase).
@@ -106,15 +108,22 @@ def exa(client: httpx.Client, query: str, limit: int, key: str, highlight_chars:
     return error or _rows("Exa", key, data.get("results"), _joined("highlights"))
 
 
-def parallel(client: httpx.Client, query: str, limit: int, key: str) -> dict:
-    """A2: GA endpoint, mode ``advanced`` (D2)."""
-    body = {
-        "objective": query,
-        "search_queries": [query],
-        "mode": "advanced",
-        "advanced_settings": {"max_results": min(limit, PARALLEL_MAX_RESULTS)},
-    }
-    data, error = _post(client, "Parallel", PARALLEL_URL, key, PARALLEL_TIMEOUT, {"x-api-key": key}, body)
+def parallel(client: httpx.Client, query: str, limit: int, key: str, v1: bool = False) -> dict:
+    """A2: beta endpoint in mode ``agentic``, as Hermes' built-in provider calls it (D2).
+    ``v1`` selects the GA endpoint in mode ``advanced`` instead."""
+    results = min(limit, PARALLEL_MAX_RESULTS)
+    if v1:
+        url, headers = PARALLEL_V1_URL, {"x-api-key": key}
+        body = {
+            "objective": query,
+            "search_queries": [query],
+            "mode": "advanced",
+            "advanced_settings": {"max_results": results},
+        }
+    else:
+        url, headers = PARALLEL_URL, {"x-api-key": key, "parallel-beta": PARALLEL_BETA}
+        body = {"search_queries": [query], "objective": query, "mode": "agentic", "max_results": results}
+    data, error = _post(client, "Parallel", url, key, PARALLEL_TIMEOUT, headers, body)
     return error or _rows("Parallel", key, data.get("results"), _joined("excerpts"))
 
 

@@ -5,3 +5,4 @@
 - First version: `search-chain` provider for `web_search` with the chain Exa → Parallel → Firecrawl.
 - Moves on when a service fails, returns no results or has no key; pauses a service for 24 hours after HTTP 402 and for a minute after HTTP 429.
 - Exa highlights capped at 600 characters (`SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS`).
+- Parallel on the beta endpoint in mode `agentic`, as Hermes calls it; `/v1/search` selectable with `SEARCH_CHAIN_PARALLEL_API=v1`.

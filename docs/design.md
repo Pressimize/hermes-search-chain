@@ -9,7 +9,7 @@ Hermes Agent uses exactly one provider for `web_search` (`web.search_backend`). 
 This plugin registers its own search provider that chains three services per call:
 
 1. **Exa**, with highlights capped at 600 characters per result.
-2. **Parallel**, GA endpoint in mode `advanced`.
+2. **Parallel**, called as Hermes' built-in provider calls it (beta endpoint, mode `agentic`).
 3. **Firecrawl**.
 
 The next stage is asked when a stage fails, returns no hits, has no key, or is paused after a quota or rate-limit reply (K5).
@@ -24,6 +24,7 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
 | Parallel, `/v1/search`, `advanced` | 70 | 8,400 characters | 1.8 s |
 | TinyFish, Brave, Tavily, Keenable | 50 to 54 | | |
 
+- The times of the capped Exa call and of `/v1/search` were measured as direct calls, the others through Hermes, so they are not comparable across rows. In the end-to-end test (T5), inside Hermes, a search took 1.8 s with Exa capped, 2.0 s with Exa uncapped, 3.0 s with Parallel's beta call and 3.3 s with `/v1/search` (medians).
 - Exa and Parallel are not distinguishable on this data: a difference of one to four queries is within the day-to-day variation of the providers.
 - Firecrawl ran on 20 of the 75 scored queries (the harder ones) and got 16, against 19 for Exa and 18 for Parallel. In the first run, on the other 55, it got 53.
 - The other four are clearly behind on the same queries.
@@ -47,7 +48,7 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
   - `plugin.yaml` declares `name: search-chain`, `kind: backend`, `requires_hermes: ">=0.21"`, `provides_web_providers: [search-chain]` and `requires_env` with `EXA_API_KEY`, `PARALLEL_API_KEY` and `FIRECRAWL_API_KEY` (each `secret: true`).
   - `register(ctx)` calls `ctx.register_web_search_provider(...)` once.
 - **S2** The provider subclasses `agent.web_search_provider.WebSearchProvider`. Its `name` is `search-chain`; `supports_search()` returns True and `supports_extract()` False. `is_available()` is true iff at least one of the three keys is set, and checks without network access.
-- **S3** Keys and the setting (A1) are read only via `agent.web_search_provider.get_provider_env(...)`, so per-profile `.env` files work.
+- **S3** Keys and the settings (A1, A2) are read only via `agent.web_search_provider.get_provider_env(...)`, so per-profile `.env` files work.
   - If reading a value raises (e.g. `UnscopedSecretError`), it counts as unset.
   - Keys never appear in logs or error texts.
 - **S4** `search(query, limit=5)` is synchronous, as in every Hermes search provider. On success it returns `{"success": True, "data": {"web": [...]}}`. Each row has the keys `url`, `title`, `description`, `position`, in this order; `position` counts from 1. All rows of one call come from one stage. A result without a URL is dropped and does not count as a row.
@@ -84,7 +85,8 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
   - `<n>` comes from the setting `SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS` in the profile's `.env`. A value of one to six decimal digits is used as the number; `0` requests Exa's default highlights (`"highlights": true`). Unset or anything else (`-5`, `5.5`, `abc`, a longer number) means 600.
   - Rows from `results[]`: `url`, `title`, and the `highlights` joined with a space as `description`.
 - **A2** Parallel:
-  - `POST https://api.parallel.ai/v1/search`, header `x-api-key`; body `{"objective": <query>, "search_queries": [<query>], "mode": "advanced", "advanced_settings": {"max_results": <limit, at most 20>}}`.
+  - Default, the call of Hermes 0.21.6 (D2): `POST https://api.parallel.ai/v1beta/search`, headers `x-api-key` and `parallel-beta: search-extract-2025-10-10`; body `{"search_queries": [<query>], "objective": <query>, "mode": "agentic", "max_results": <limit, at most 20>}`.
+  - With the setting `SEARCH_CHAIN_PARALLEL_API=v1` in the profile's `.env` (case-insensitive; anything else means the default): `POST https://api.parallel.ai/v1/search`, header `x-api-key`; body `{"objective": <query>, "search_queries": [<query>], "mode": "advanced", "advanced_settings": {"max_results": <limit, at most 20>}}`.
   - Rows from `results[]`: `url`, `title`, and the `excerpts` joined with a space as `description`.
   - The cap of 20 is the one Hermes applies to Parallel. It only cuts rows when the model asks for more than 20 results.
 - **A3** Firecrawl:
@@ -125,7 +127,7 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
 - **T1** Unit tests (pytest, no network, `httpx.MockTransport`):
   - every branch of K2–K6, with missing keys and pauses, including all stages paused or without key; at most one request per stage (K7);
   - pauses per status, their end (injected clock), and per key (K5);
-  - requests and row mapping of A1–A3, the values of the setting of A1, the cap of A2; error texts, codes and key masking (A4); the proxy variables (A5);
+  - requests and row mapping of A1–A3 (both Parallel calls), the values of the settings of A1 and A2, the cap of A2; error texts, codes and key masking (A4); the proxy variables (A5);
   - result shape and key order (S4); no exception escapes (S5); interrupts (S6);
   - `register(ctx)` and `plugin.yaml` (S1); properties and `is_available` (S2); keys absent from results and logs (S3); log lines (L1, L2).
 - **T2** Live check through Hermes' real `web_search` path, without an LLM, in a profile with the three keys:
@@ -136,6 +138,7 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
   - the script refuses to run unless the profile selects `search-chain` and has `web.keyless_rescue: false`.
   - A used-up quota (HTTP 402) is not forced in the live check; it is observed in the log during use.
 - **T3** A review checks the result against this document.
+- **T5** End-to-end test with a model (2026-10-10, Hermes Desktop 0.21.6, 36 questions, four setups, one run each): the model searches through Hermes' real tool path; the intended stage serves in every run; with an invalid Exa key Parallel serves, with invalid Exa and Parallel keys Firecrawl serves. Results: [README](../README.md#validation).
 - **T4** `ruff check` and `ruff format --check` are clean; CI (GitHub Actions: ruff, pytest on Python 3.11 and 3.14) is green.
 
 ## 10. Known limitations
@@ -146,7 +149,8 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
 - After a restart the first call asks every stage again, including one with a used-up quota.
 - A renewed or topped-up quota is used only when the 24-hour pause ends or Hermes restarts.
 - A search that finds nothing at any stage is reported as a failure with `no results` (K6).
-- Results of different stages differ in length: Exa capped about 4,000 characters per search, Parallel about 8,400, Firecrawl about 3,900 (medians for 5 results).
+- Results of different stages differ in length: Exa capped about 4,000 characters per search, Parallel about 8,200, Firecrawl about 3,900 (medians for 5 results).
+- Parallel reserves the beta endpoint for existing integrations and names no end date. If it is switched off, the Parallel stage fails with an HTTP error on every search and Firecrawl serves; the log line shows it (`parallel=http_...`), and `SEARCH_CHAIN_PARALLEL_API=v1` moves the stage to the GA endpoint.
 - Hermes caches successful results for `web.cache_ttl_minutes` (default 20).
 - Every query is sent to Exa, and possibly to Parallel and Firecrawl (privacy).
 - Providers and their order are fixed.
@@ -156,11 +160,11 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
 | ID | Decision | Reason |
 |---|---|---|
 | D1 | Direct REST calls, not Hermes' built-in providers | The built-in Exa, Parallel and Firecrawl providers need vendor SDKs that Hermes installs on first use; in container deployments that runtime install can disturb the image's package set. Direct calls give exact status codes for K5 and reach Exa's highlight cap, which the built-in provider does not expose. |
-| D2 | Parallel via `/v1/search` in mode `advanced`, not the beta endpoint Hermes 0.21.6 calls | Parallel's documentation reserves the beta endpoint for existing integrations. In the comparison `advanced` showed no detectable difference to the beta call (70 against 72 of 75) and was faster. Mode `fast` on `/v1/search` was clearly worse (49 of 75) and is not used. |
+| D2 | Parallel via the beta endpoint in mode `agentic`, as Hermes 0.21.6 calls it; `/v1/search` in mode `advanced` selectable by a setting | Measured twice against each other, the beta call was never worse: 72 against 70 of 75 queries in the comparison without a model, 36 against 34 of 36 questions in the end-to-end test with a model, at the same speed inside Hermes (3.0 against 3.3 s per search). Neither difference is statistically firm, but nothing measured favours `/v1/search`. Parallel's documentation reserves the beta endpoint for existing integrations, so the GA endpoint stays one setting away. Mode `fast` on `/v1/search` was clearly worse (49 of 75) and is not offered. |
 | D3 | Exa highlights capped at 600 characters, adjustable by one setting | No detectable loss (74 against 73 of 75) at one third of the text; same price. The comparison ran without an LLM, so an effect on answer quality is not measured; the setting allows switching the cap off. |
 | D4 | Pauses in memory, fixed lengths, only for HTTP 402 and 429 | No files, no calendar logic, self-healing. A quota does not come back within hours, so the pause after HTTP 402 is a day: at most one failing request per day and stage, and a renewed quota is picked up within a day (at once after a restart). A pause that is too short costs one failing request. A rejected key (401, 403) is a configuration error that should stay visible in every log line. |
 | D5 | A reply without rows moves on to the next stage; no rows at all is a failure with the reason `no results` | Cheap and rare (no empty reply in 1,540 searches of the comparison); another index may have hits. A failure is not cached by Hermes (K6). |
 | D6 | No note for the model about the serving stage | All three are live web searches; the model does not need to treat the results differently. The log line shows the stage. |
 | D7 | Synchronous `httpx.Client` | Hermes calls `search` synchronously. |
-| D8 | Constants instead of configuration, except the highlight cap | As little code as needed; changes come with releases. |
+| D8 | Constants instead of configuration, except the highlight cap and the Parallel endpoint | As little code as needed; changes come with releases. |
 | D9 | MIT license | Same as Hermes Agent. |

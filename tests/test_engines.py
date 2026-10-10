@@ -83,8 +83,23 @@ def test_exa_highlight_setting(chars, highlights):
 def test_parallel_request_and_rows():
     seen, handler = capture({"results": [{"url": "https://a.example/", "title": "A", "excerpts": ["x", "y"]}]})
     out = call(engines.parallel, handler, "what is x", 10, "par-key")
-    assert seen["url"] == "https://api.parallel.ai/v1/search"
+    assert seen["url"] == "https://api.parallel.ai/v1beta/search"
     assert seen["headers"]["x-api-key"] == "par-key"
+    assert seen["headers"]["parallel-beta"] == "search-extract-2025-10-10"
+    assert seen["body"] == {
+        "search_queries": ["what is x"],
+        "objective": "what is x",
+        "mode": "agentic",
+        "max_results": 10,
+    }
+    assert out == {"rows": [{"url": "https://a.example/", "title": "A", "description": "x y", "position": 1}]}
+
+
+def test_parallel_v1_request_and_rows():
+    seen, handler = capture({"results": [{"url": "https://a.example/", "title": "A", "excerpts": ["x", "y"]}]})
+    out = call(engines.parallel, handler, "what is x", 10, "par-key", True)
+    assert seen["url"] == "https://api.parallel.ai/v1/search"
+    assert seen["headers"]["x-api-key"] == "par-key" and "parallel-beta" not in seen["headers"]
     assert seen["body"] == {
         "objective": "what is x",
         "search_queries": ["what is x"],
@@ -97,6 +112,8 @@ def test_parallel_request_and_rows():
 def test_parallel_caps_results_at_20():
     seen, handler = capture({"results": []})
     call(engines.parallel, handler, "q", 50, "k")
+    assert seen["body"]["max_results"] == 20
+    call(engines.parallel, handler, "q", 50, "k", True)
     assert seen["body"]["advanced_settings"] == {"max_results": 20}
 
 

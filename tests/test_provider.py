@@ -305,6 +305,31 @@ def test_exa_highlight_setting(env, value, highlights):
     assert json.loads(api.requests[0].content)["contents"] == {"highlights": highlights}
 
 
+# --- A2 setting -----------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "path"),
+    [
+        (None, "/v1beta/search"),
+        ("", "/v1beta/search"),
+        ("beta", "/v1beta/search"),
+        ("v2", "/v1beta/search"),
+        ("v1", "/v1/search"),
+        (" V1 ", "/v1/search"),
+        (RuntimeError("no scope"), "/v1beta/search"),
+    ],
+)
+def test_parallel_api_setting(env, value, path):
+    if value is not None:
+        env["SEARCH_CHAIN_PARALLEL_API"] = value
+    del env["EXA_API_KEY"]
+    api = Api()
+    assert served_by(chain(api).search("q")) == "P"
+    assert api.requests[0].url.path == path
+    assert ("parallel-beta" in api.requests[0].headers) == (path == "/v1beta/search")
+
+
 # --- S3, S5, S6, A5 -------------------------------------------------------------------------------
 
 

@@ -15,6 +15,7 @@ from . import engines
 
 NAME = "search-chain"
 HIGHLIGHT_SETTING = "SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS"
+PARALLEL_SETTING = "SEARCH_CHAIN_PARALLEL_API"
 PAUSES = {402: 86400, 429: 60}  # K5: seconds a stage is skipped after this HTTP status
 log = logging.getLogger(__name__)
 
@@ -41,10 +42,14 @@ def _exa(client: httpx.Client, query: str, limit: int, key: str) -> dict:
     return engines.exa(client, query, limit, key, chars)
 
 
+def _parallel(client: httpx.Client, query: str, limit: int, key: str) -> dict:
+    return engines.parallel(client, query, limit, key, v1=_env(PARALLEL_SETTING).lower() == "v1")  # A2
+
+
 # K1: stage name for the log, provider name for error texts, key variable, call.
 STAGES = (
     ("exa", "Exa", "EXA_API_KEY", _exa),
-    ("parallel", "Parallel", "PARALLEL_API_KEY", engines.parallel),
+    ("parallel", "Parallel", "PARALLEL_API_KEY", _parallel),
     ("firecrawl", "Firecrawl", "FIRECRAWL_API_KEY", engines.firecrawl),
 )
 
