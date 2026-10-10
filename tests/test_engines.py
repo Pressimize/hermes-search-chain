@@ -70,6 +70,54 @@ def test_rows_without_url_are_dropped_and_only_text_parts_joined():
     assert call(engines.exa, reply({"results": [{}]}), "q", 5, "k") == {"rows": []}
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+        "data:text/html,x",
+        "ftp://a.example/",
+        "//a.example/",
+        " https://a.example/",
+        {"host": "x"},
+        5,
+        ["https://a.example/"],
+        None,
+    ],
+)
+def test_rows_without_a_web_url_are_dropped(url):
+    """S4: only a string that starts with http:// or https:// counts as a URL."""
+    items = [{"url": url, "title": "dropped"}, {"url": "HTTPS://A.example/", "title": "kept"}]
+    out = call(engines.exa, reply({"results": items}), "q", 5, "k")
+    assert out == {"rows": [{"url": "HTTPS://A.example/", "title": "kept", "description": "", "position": 1}]}
+
+
+def test_title_and_description_that_are_no_text_become_empty():
+    web = [{"url": "https://a.example/", "title": 7, "description": {"d": 1}}]
+    out = call(engines.firecrawl, reply({"success": True, "data": {"web": web}}), "q", 5, "k")
+    assert out == {"rows": [{"url": "https://a.example/", "title": "", "description": "", "position": 1}]}
+    item = {"url": "https://a.example/", "title": {"a": 1}, "highlights": "no list"}
+    out = call(engines.exa, reply({"results": [item]}), "q", 5, "k")
+    assert out == {"rows": [{"url": "https://a.example/", "title": "", "description": "", "position": 1}]}
+
+
+def test_long_title_and_description_are_cut():
+    """S4: title 300 characters; description 16,000, from Firecrawl 3,000 (A3)."""
+    url, long = "https://a.example/", "x" * 100_000
+    exa = call(engines.exa, reply({"results": [{"url": url, "title": long, "highlights": [long]}]}), "q", 5, "k")
+    par = call(
+        engines.parallel, reply({"results": [{"url": url, "title": long, "excerpts": [long, long]}]}), "q", 5, "k"
+    )
+    web = [
+        {"url": url, "title": long, "description": long},
+        {"url": url, "title": "t" * 300, "description": "d" * 3000},
+    ]
+    fire = call(engines.firecrawl, reply({"success": True, "data": {"web": web}}), "q", 5, "k")
+    assert [len(out["rows"][0]["title"]) for out in (exa, par, fire)] == [300, 300, 300]
+    assert [len(out["rows"][0]["description"]) for out in (exa, par, fire)] == [16000, 16000, 3000]
+    assert fire["rows"][1] == {"url": url, "title": "t" * 300, "description": "d" * 3000, "position": 2}  # at the bound
+
+
 @pytest.mark.parametrize(("chars", "highlights"), [(300, {"maxCharacters": 300}), (0, True)])
 def test_exa_highlight_setting(chars, highlights):
     seen, handler = capture({"results": []})
@@ -213,6 +261,50 @@ def test_error_text_is_cut_and_key_masked(fn, name):
     assert "SECRET-KEY" not in out["error"]
     assert out["error"].startswith(f"{name}: HTTP 401 bad key [key] x")
     assert len(out["error"]) == len(f"{name}: ") + 200
+
+
+@pytest.mark.parametrize(("fn", "name"), ENGINES)
+def test_error_text_is_one_printable_line(fn, name):
+    """A4: a reply cannot add lines or control characters to the log."""
+    reason = "NO_CREDITS\nERROR forged line\r\n\tx\x1b[31my\x00z\u2028w"
+    out = call(fn, reply({"error": reason}, 402), "q", 5, "k")
+    assert out == {
+        "error": f"{name}: HTTP 402 NO_CREDITS ERROR forged line x [31my z w",
+        "code": "http_402",
+        "status": 402,
+    }
+    out = call(fn, lambda request: httpx.Response(500, text="  a\r\nb\tc  "), "q", 5, "k")
+    assert out["error"] == f"{name}: HTTP 500 a b c"
+
+
+def test_only_a_value_of_8_characters_or_more_is_masked():
+    """S3: a shorter value is not taken for a key, so it cannot garble the text."""
+    out = call(engines.firecrawl, lambda request: httpx.Response(200, text="no json"), "q", 5, "f")
+    assert out["error"] == "Firecrawl: malformed reply"
+    out = call(engines.exa, reply({"error": "bad key 1234567"}, 401), "q", 5, "1234567")
+    assert out["error"] == "Exa: HTTP 401 bad key 1234567"
+    out = call(engines.exa, reply({"error": "bad key 12345678"}, 401), "q", 5, "12345678")
+    assert out["error"] == "Exa: HTTP 401 bad key [key]"
+
+
+def test_key_is_masked_before_the_text_is_shortened(monkeypatch):
+    """A4: masking sees the whole reply, so no part of a key is left where the cleaned-up text ends."""
+    monkeypatch.setattr(engines, "ERROR_SCAN", 30)
+    key = "SECRET-KEY-0123456789"
+    out = call(engines.exa, reply({"error": "x" * 15 + key}, 401), "q", 5, key)
+    assert out["error"] == "Exa: HTTP 401 " + "x" * 15 + "[key]"
+    out = call(engines.exa, reply({"error": "y" * 100}, 401), "q", 5, key)
+    assert out["error"] == "Exa: HTTP 401 " + "y" * 21  # only the first 30 characters are looked at
+
+
+@pytest.mark.parametrize(("fn", "name"), ENGINES)
+def test_reply_the_parser_gives_up_on(fn, name):
+    """A4, K5: a body nested too deeply to parse keeps the status of an error reply; as a 2xx it is malformed."""
+    deep = "[" * 200_000
+    out = call(fn, lambda request: httpx.Response(402, text=deep), "q", 5, "k")
+    assert (out["code"], out["status"]) == ("http_402", 402)
+    out = call(fn, lambda request: httpx.Response(200, text=deep), "q", 5, "k")
+    assert out == {"error": f"{name}: malformed reply", "code": "malformed", "status": None}
 
 
 # --- A0 -------------------------------------------------------------------------------------------

@@ -37,7 +37,6 @@ def hermes_env(profile):
     for k in [k for k in os.environ if k.endswith("_API_KEY")]:
         os.environ.pop(k)
     sys.path.insert(0, os.path.join(ROOT, "hermes-agent"))
-    sys._hermes_pin_default_home = True
     import hermes_bootstrap  # noqa: F401
     from hermes_cli.env_loader import load_hermes_dotenv
 
@@ -63,18 +62,27 @@ def main():
     parser.add_argument("--pace", type=float, default=7.5)
     parser.add_argument("queries", nargs="*")
     args = parser.parse_args()
+    broken = [stage for stage in args.broken.split(",") if stage]
+    if unknown := [stage for stage in broken if stage not in KEYS]:
+        parser.error(f"--break: unknown stage {unknown[0]!r}, choose from {', '.join(KEYS)}")
+    if not 0 <= args.pace < 3600:
+        parser.error("--pace must be a number of seconds from 0 to below 3600")
     sys.stdout.reconfigure(encoding="utf-8")
     hermes_env(args.profile)
-    for stage in filter(None, args.broken.split(",")):
+    for stage in broken:
         os.environ[KEYS[stage]] = "invalid-key-for-live-check"
 
+    # Written against Hermes 0.21.6: these are internal names of Hermes and may move with an update.
     from agent.web_search_registry import get_provider
     from tools.web_tools import _ensure_web_plugins_loaded, _get_search_backend, _load_web_config, web_search_tool
 
     _ensure_web_plugins_loaded()
-    assert _get_search_backend() == "search-chain", f"search backend is {_get_search_backend()!r}"
-    assert get_provider("search-chain"), "plugin not loaded (plugins.enabled?)"
-    assert _load_web_config().get("keyless_rescue", True) is False, "set web.keyless_rescue: false"
+    if _get_search_backend() != "search-chain":
+        sys.exit(f"search backend is {_get_search_backend()!r}, not 'search-chain'")
+    if not get_provider("search-chain"):
+        sys.exit("plugin not loaded (plugins.enabled?)")
+    if _load_web_config().get("keyless_rescue", True) is not False:
+        sys.exit("set web.keyless_rescue: false")
 
     collect = Collect()
     logging.getLogger().addHandler(collect)

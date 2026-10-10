@@ -4,16 +4,16 @@ How the plugin was checked against [design.md](design.md). Requirement IDs refer
 
 | Check | Result |
 |---|---|
-| T1 Unit tests | 112 tests, no network |
+| T1 Unit tests | 150 tests; nothing leaves the machine |
 | T2 Live check through Hermes | Exa serves; with broken keys Parallel and Firecrawl serve |
-| T3 Reviews against the design | two reviews, findings fixed |
+| T3 Reviews | two reviews against the design, findings fixed; three external code reviews of v0.1.0, adopted in v0.1.1 |
 | T4 Lint and CI | clean; Python 3.11 and 3.14 |
 | T5 End-to-end test with a model | 144 runs without a failure; 34 to 36 of 36 answers correct in every setup |
 | Not verified | a really used-up quota (HTTP 402 and the 24-hour pause) |
 
 ## T1 – Unit tests
 
-`uv run pytest` runs 112 tests with `httpx.MockTransport`; Hermes is replaced by a stand-in with the same abstract members. They cover every branch of the chain (K2–K7), the pauses with an injected clock (K5), both Parallel calls and both settings (A1, A2), error texts, key masking and timeouts (A0, A4), the result shape (S4), interrupts (S6), the proxy variables (A5) and the log lines (L1, L2).
+`uv run pytest` runs 150 tests with `httpx.MockTransport` (one of them, for A5, connects to a closed local port); Hermes is replaced by a stand-in with the same abstract members. They cover every branch of the chain (K2–K7), the pauses with an injected clock (K5), both Parallel calls and both settings (A1, A2), error texts, key masking and timeouts (A0, A4), the result shape, the URL rule and the text bounds (S4), the bounds of `limit` (A6), interrupts (S6), the proxy variables (A5) and the log lines (L1, L2).
 
 ## T2 – Live check through Hermes
 
@@ -33,10 +33,17 @@ An invalid key (HTTP 401) starts no pause, so every call tries the stage again; 
 - **Code against design, after coding,** by an independent reviewer who also ran 21 single-line mutations of the code against the tests. 19 were caught. The review found one real bug (a setting value longer than Python's integer-parsing limit failed the whole call) and three gaps (results without a URL counted as hits; two untested boundaries). All four are fixed and tested.
 - **Smoke test against the real Hermes classes** (Hermes Desktop 0.21.6, Python 3.14): the provider instantiates against the real base class, reads keys through Hermes, and returned ten rows in the required shape from a live Firecrawl search.
 - **Documents and data before publication:** a reviewer recomputed the tables of this document and of evaluation.md from the CSV files and checked the decisions for traceable reasons; the mismatches found were corrected.
+- **Three external code reviews of v0.1.0** (2026-10-10 and 2026-10-11), each by an independent reviewer at the published state. None found a critical defect; together they listed 52 findings, many of them shared. Every finding was checked against the code, against Hermes 0.21.6 and, where it claimed a cost, against a measurement, before it was adopted or declined:
+  - *Reproduced and fixed in v0.1.1:* a line break in a provider's error text added a line to the log; a one-character key garbled every error text; a result whose `url` was not text became a row; an empty query was sent to all three services; `limit` went to Exa and Firecrawl unchanged, up to the 100 that Hermes allows; 61 minutes of remaining pause read as "2 h"; an error reply nested too deeply to parse lost its HTTP status; the install command of the README nested the plugin one level down when run on an existing copy.
+  - *Read in Hermes:* it rounds the model's limit up to 10, 20, 50 or 100; it does not validate the query; it refuses other URL schemes and private addresses when a page is fetched; its log formatter writes a line break in a message unchanged; it ends a tool call after 420 s.
+  - *Measured:* building an `httpx.Client` takes about 9 ms and an idle connection is dropped after 5 s (D14); a server that sends one byte at a time is not stopped by the read timeout (D13).
+  - *Text bounds checked on the stored results* of both comparison runs (the result lists are not published, they hold the providers' texts): the published verdicts of Firecrawl, Parallel and capped Exa were reproduced first (280 of 280). With the bounds of v0.1.1 no title and no description of Exa or Parallel is cut; 26 of Firecrawl's 400 descriptions are, and no verdict changes. For Firecrawl alone, bounds of 1,000, 2,000, 4,000 and 5,000 characters change none either; at 300 two change (D12).
+  - *Declined with a reason:* design D13 to D16.
+  - *Reviews of the change itself:* the plan was reviewed before coding; three corrections were taken over (one flat text bound instead of a rule per provider, no catch-all exception, a complete list of the design items to update). The code was reviewed afterwards with 23 single-line mutations against the tests: 20 were caught, and tests for the other three were added. The review also found that a key that cannot be encoded would have stopped the whole chain instead of its own stage; that is fixed and tested. A further reviewer compared the documents with the code sentence by sentence.
 
 ## T4 – Lint and CI
 
-`ruff check` and `ruff format --check` are clean. GitHub Actions runs both and the tests on Python 3.11 and 3.14 on every push.
+`ruff check` and `ruff format --check` are clean. GitHub Actions runs both, the tests and `scripts/recompute.py` on Python 3.11 and 3.14 on every push. The script recomputes the tables; CI checks that it runs, not the figures.
 
 ## T5 – End-to-end test with a model
 
@@ -112,7 +119,7 @@ Input tokens by kind of question (sum):
 - **The plugin works in the real tool path.** No failed run, no run cut off, the intended stage served every search, and no provider got more than five requests in any minute.
 - **The answers are at the ceiling.** The model often knows facts and fixes already, and for versions it fetches a page when in doubt. Good search setups therefore differ in effort, not in correctness, and 36 questions with one run each would only show large differences.
 - **The cap costs no answer and saves 11 % of the input tokens,** almost all of it on error messages (33 % less), where Exa's own highlights are long (median 18,800 characters per search result against 4,300 with the cap). For facts and versions Exa's highlights are short anyway. The worry that short highlights cause more page fetches is not clearly confirmed: 11 against 9 fetches, in four questions only the capped setup fetched a page, in two only the uncapped one.
-- **`/v1/search` brings no measurable advantage over the beta call:** the same tokens, the same speed (median difference 0.1 s), and two wrong answers against none. In run 2 of the evaluation it also stood 0 : 2 (70 against 72 of 75). Pooling the two tests, which differ in size and in who writes the queries, gives four queries in the same direction out of 111 comparisons (sign test p 0.125): a hint, not proof.
+- **`/v1/search` brings no measurable advantage over the beta call:** the same tokens, the same speed (medians 3.3 s and 3.0 s; the median of the differences per question is 0.1 s), and two wrong answers against none. In run 2 of the evaluation it also stood 0 : 2 (70 against 72 of 75). Pooling the two tests, which differ in size and in who writes the queries, gives four queries in the same direction out of 111 comparisons (sign test p 0.125): a hint, not proof.
 - **Exa capped against the built-in Parallel call:** equally good answers, the search faster in 20 of 25 comparable questions (median 1.1 s), the input smaller in 31 of 36 questions (13 % in total). The time to the answer drops by 0.7 s in the median; the model takes about 5 s per question and dominates the wait.
 
 **Requests and consumption** over smoke test, fallback check and main run, counted from the logs: Exa 91 requests (3 of them rejected because of an invalid key), Parallel 101 (1 rejected), TinyFish 41 pages, Firecrawl 1 search. Highest rate in any 60 s: Exa 4, Parallel 5, TinyFish 4.
@@ -128,4 +135,4 @@ Input tokens by kind of question (sum):
 
 ## Not verified
 
-A really used-up quota: the HTTP 402 reply and the 24-hour pause are covered by unit tests only. Exa documents the reply (`NO_MORE_CREDITS`); Parallel does not document its reply at all. In use, the log shows it: `exa=http_402 parallel=ok` once, then `exa=paused parallel=ok`.
+A really used-up quota: the HTTP 402 reply and the 24-hour pause are covered by unit tests only. Exa documents the reply (`NO_MORE_CREDITS`); Parallel does not document its reply at all. Expected in use, not observed so far: `exa=http_402 parallel=ok` once, then `exa=paused parallel=ok`.

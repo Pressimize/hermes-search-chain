@@ -6,6 +6,8 @@ else ``{"error": "<Provider>: <detail>", "code": "<short code>", "status": <HTTP
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import httpx
 
 EXA_URL = "https://api.exa.ai/search"
@@ -19,14 +21,21 @@ EXA_TIMEOUT = 10.0
 PARALLEL_TIMEOUT = 15.0
 FIRECRAWL_TIMEOUT = 15.0
 ERROR_MAX = 200  # A4
+ERROR_SCAN = 2000  # A4: only this many characters of a reply are cleaned up for the error text
+KEY_MIN = 8  # S3: a shorter value is not masked as a key
 EXA_HIGHLIGHT_CHARS = 600  # A1, D3
-PARALLEL_MAX_RESULTS = 20  # A2
+MAX_RESULTS = 20  # A6
+TITLE_MAX = 300  # S4
+TEXT_MAX = 16000  # S4: no description is longer than this
+FIRECRAWL_TEXT_MAX = 3000  # A3, D12
 
 
 def _error(provider: str, detail: object, code: str, key: str, status: int | None = None) -> dict:
-    text = str(detail).strip()
-    if key:  # S3: a reply that echoes the key must not carry it into the result
+    text = str(detail)
+    if len(key) >= KEY_MIN:  # S3: a reply that echoes the key must not carry it into the result
         text = text.replace(key, "[key]")
+    # A4: one line of printable characters, so a reply cannot add lines to the log
+    text = " ".join("".join(c if c.isprintable() else " " for c in text[:ERROR_SCAN]).split())
     return {"error": f"{provider}: {text[:ERROR_MAX]}", "code": code, "status": status}
 
 
@@ -38,7 +47,7 @@ def _detail(response: httpx.Response) -> str:
     """A4: the vendor's own reason for a non-2xx reply."""
     try:
         body = response.json()
-    except ValueError:
+    except (ValueError, RecursionError):  # an unreadable body must not hide the status (K5)
         body = None
     if isinstance(body, dict):
         for field in ("tag", "error", "message"):
@@ -62,7 +71,7 @@ def _post(
         data = response.json()
     except httpx.TimeoutException:
         return None, _error(provider, "timeout", "timeout", key)
-    except ValueError:
+    except (ValueError, RecursionError):  # not JSON, or nested too deeply to parse
         return None, _malformed(provider, key)
     except Exception as exc:  # transport errors
         return None, _error(provider, type(exc).__name__, type(exc).__name__, key)
@@ -71,20 +80,24 @@ def _post(
     return data, None
 
 
-def _rows(provider: str, key: str, items: object, text) -> dict:
-    """S4: rows in Hermes' key order, numbered from 1; items without a URL are dropped.
-    ``text`` builds the description of one item."""
+def _str(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _rows(provider: str, key: str, items: object, text: Callable[[dict], str], text_max: int = TEXT_MAX) -> dict:
+    """S4: rows in Hermes' key order, numbered from 1; an item without an http(s) URL is dropped.
+    ``text`` builds the description of one item, cut to ``text_max`` characters."""
     if items is None:
         items = []
     if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
         return _malformed(provider, key)
-    hits = [item for item in items if item.get("url")]
+    hits = [item for item in items if _str(item.get("url")).lower().startswith(("http://", "https://"))]
     return {
         "rows": [
             {
-                "url": str(item["url"]),
-                "title": str(item.get("title") or ""),
-                "description": text(item),
+                "url": item["url"],
+                "title": _str(item.get("title"))[:TITLE_MAX],
+                "description": text(item)[:text_max],
                 "position": position,
             }
             for position, item in enumerate(hits, 1)
@@ -92,7 +105,7 @@ def _rows(provider: str, key: str, items: object, text) -> dict:
     }
 
 
-def _joined(field: str):
+def _joined(field: str) -> Callable[[dict], str]:
     def text(item: dict) -> str:
         parts = item.get(field)
         return " ".join(part for part in parts if isinstance(part, str)) if isinstance(parts, list) else ""
@@ -111,7 +124,7 @@ def exa(client: httpx.Client, query: str, limit: int, key: str, highlight_chars:
 def parallel(client: httpx.Client, query: str, limit: int, key: str, v1: bool = False) -> dict:
     """A2: beta endpoint in mode ``agentic``, as Hermes' built-in provider calls it (D2).
     ``v1`` selects the GA endpoint in mode ``advanced`` instead."""
-    results = min(limit, PARALLEL_MAX_RESULTS)
+    results = min(limit, MAX_RESULTS)
     if v1:
         url, headers = PARALLEL_V1_URL, {"x-api-key": key}
         body = {
@@ -137,4 +150,4 @@ def firecrawl(client: httpx.Client, query: str, limit: int, key: str) -> dict:
     payload = data.get("data")
     if data.get("success") is not True or not isinstance(payload, dict):
         return _malformed("Firecrawl", key)
-    return _rows("Firecrawl", key, payload.get("web"), lambda item: str(item.get("description") or ""))
+    return _rows("Firecrawl", key, payload.get("web"), lambda item: _str(item.get("description")), FIRECRAWL_TEXT_MAX)

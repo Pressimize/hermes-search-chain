@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 import time
@@ -55,8 +56,8 @@ STAGES = (
 
 
 def _left(seconds: float) -> str:
-    """Remaining pause for the error text, rounded up."""
-    return f"{math.ceil(seconds / 3600)} h" if seconds > 3600 else f"{math.ceil(seconds / 60)} min"
+    """Remaining pause for the error text: minutes rounded up below one hour, else the nearest hour."""
+    return f"{math.floor(seconds / 3600 + 0.5)} h" if seconds >= 3600 else f"{math.ceil(seconds / 60)} min"
 
 
 def _failed(error: str) -> dict:
@@ -69,7 +70,7 @@ class SearchChainProvider(WebSearchProvider):
     ) -> None:
         self._transport = transport  # tests only; Hermes instantiates without arguments
         self._clock = clock
-        self._paused: dict[tuple[str, str], tuple[float, str]] = {}  # K5: (stage, key) -> (until, reason)
+        self._paused: dict[tuple[str, str], tuple[float, str]] = {}  # K5: (stage, key digest) -> (until, reason)
 
     @property
     def name(self) -> str:
@@ -99,6 +100,10 @@ class SearchChainProvider(WebSearchProvider):
             log.info("search-chain: %s", " ".join(steps) or "no stage ran")  # L1
 
     def _chain(self, query: str, limit: int, steps: list[str]) -> dict[str, Any]:
+        if not isinstance(query, str) or not query.strip():  # S4: Hermes passes an empty query through unchecked
+            steps.append("empty_query")
+            return _failed("search-chain: empty query")
+        limit = max(1, min(limit, engines.MAX_RESULTS))  # A6
         reasons: list[str] = []
         with httpx.Client(transport=self._transport) as client:
             for stage, provider, key_name, call in STAGES:
@@ -110,7 +115,8 @@ class SearchChainProvider(WebSearchProvider):
                     steps.append(f"{stage}=no_key")
                     reasons.append(f"{provider}: no API key")
                     continue
-                until, reason = self._paused.get((stage, key), (0.0, ""))
+                slot = (stage, hashlib.sha256(key.encode("utf-8", "surrogatepass")).hexdigest())  # K5
+                until, reason = self._paused.get(slot, (0.0, ""))
                 if (left := until - self._clock()) > 0:
                     steps.append(f"{stage}=paused")
                     reasons.append(f"{reason} (paused for another {_left(left)})")
@@ -126,7 +132,7 @@ class SearchChainProvider(WebSearchProvider):
                 steps.append(f"{stage}={result['code']}")
                 reasons.append(result["error"])
                 if pause := PAUSES.get(result["status"]):
-                    self._paused[(stage, key)] = (self._clock() + pause, result["error"])
+                    self._paused[slot] = (self._clock() + pause, result["error"])
                     detail = result["error"].partition(": ")[2]
                     log.warning("search-chain: %s paused for %d s (%s)", stage, pause, detail)  # L2
         return _failed("search-chain: " + "; ".join(reasons))  # K6

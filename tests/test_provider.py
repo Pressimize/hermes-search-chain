@@ -244,6 +244,33 @@ def test_pause_belongs_to_the_key(env):
     assert api.hosts() == [EXA, PARALLEL, EXA, PARALLEL]
 
 
+def test_key_that_cannot_be_encoded_fails_only_its_stage(env, logs):
+    """K5: a key with a lone surrogate (undecodable bytes in the environment) does not stop the chain."""
+    env["EXA_API_KEY"] = "k\ud800y12345"
+    api = Api(exa=status(402))
+    assert served_by(chain(api).search("q")) == "P"
+    assert lines(logs)[-1].endswith(" parallel=ok")
+
+
+def test_pause_table_holds_no_key(env):
+    """K5: the table is keyed by a digest of the key."""
+    p = chain(Api(exa=status(402), parallel=status(429)))
+    p.search("q")
+    assert len(p._paused) == 2
+    assert not any(str(key) in repr(p._paused) for key in env.values())
+
+
+def test_pause_warning_is_one_line(env, logs):
+    """A4, L2: a reason with line breaks cannot forge a log line."""
+    api = Api(exa=status(402, {"tag": "NO_CREDITS\nERROR forged line"}), parallel=empty, firecrawl=empty)
+    result = chain(api).search("q")
+    assert result["error"].startswith("search-chain: Exa: HTTP 402 NO_CREDITS ERROR forged line; Parallel: no results")
+    assert lines(logs, logging.WARNING) == [
+        "search-chain: exa paused for 86400 s (HTTP 402 NO_CREDITS ERROR forged line)"
+    ]
+    assert not any("\n" in record.getMessage() for record in logs.records)
+
+
 def test_all_stages_paused_or_without_key(env, logs):
     del env["FIRECRAWL_API_KEY"]
     clock = Clock()
@@ -263,7 +290,19 @@ def test_all_stages_paused_or_without_key(env, logs):
 
 @pytest.mark.parametrize(
     ("after", "left"),
-    [(0, "24 h"), (3600, "23 h"), (82799, "2 h"), (82800, "60 min"), (86340, "1 min"), (86399, "1 min")],
+    [
+        (0, "24 h"),
+        (3600, "23 h"),
+        (77400, "3 h"),  # 2.5 h left
+        (79200, "2 h"),
+        (81000, "2 h"),  # 1.5 h left
+        (81001, "1 h"),
+        (82799, "1 h"),
+        (82800, "1 h"),  # exactly one hour left
+        (82801, "60 min"),
+        (86340, "1 min"),
+        (86399, "1 min"),
+    ],
 )
 def test_remaining_pause_in_the_error_text(env, after, left):
     del env["PARALLEL_API_KEY"], env["FIRECRAWL_API_KEY"]
@@ -384,3 +423,24 @@ def test_proxy_variables_are_honoured(env, logs, monkeypatch):
     result = SearchChainProvider().search("q")
     assert result["error"].startswith("search-chain: Exa: ConnectError")
     assert lines(logs) == ["search-chain: exa=ConnectError parallel=no_key firecrawl=no_key"]
+
+
+# --- A6 limit, S4 query ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("asked", "sent"), [(0, 1), (-5, 1), (5, 5), (20, 20), (50, 20), (100, 20)])
+def test_limit_is_kept_between_1_and_20(env, asked, sent):
+    """A6: Hermes asks for up to 100 results; no stage is asked for more than 20."""
+    api = Api(exa=empty, parallel=empty, firecrawl=empty)
+    chain(api).search("q", asked)
+    exa, parallel, firecrawl = (json.loads(request.content) for request in api.requests)
+    assert (exa["numResults"], parallel["max_results"], firecrawl["limit"]) == (sent, sent, sent)
+
+
+@pytest.mark.parametrize("query", [None, "", "   \n", 5])
+def test_empty_query_asks_no_service(env, logs, query):
+    api = Api()
+    assert chain(api).search(query) == {"success": False, "error": "search-chain: empty query"}
+    assert api.requests == []
+    assert lines(logs) == ["search-chain: empty_query"]
+    assert lines(logs, logging.WARNING) == []

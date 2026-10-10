@@ -21,6 +21,7 @@ flowchart LR
 
 - Each service is asked at most once per search; there are no retries.
 - A service without a key is skipped.
+- Every service is asked for at most 20 results; a result without an `http(s)` address is dropped.
 - After **HTTP 402** (quota or budget used up) a service is skipped for 24 hours, after **HTTP 429** (rate limit) for one minute. Then it is asked again, so nothing has to be reset when a quota renews. Pauses live in memory only; restarting Hermes ends them.
 - If no service returns results, the model gets one error with every reason, e.g. `search-chain: Exa: HTTP 402 NO_MORE_CREDITS (paused for another 17 h); Parallel: timeout; Firecrawl: no results`.
 
@@ -69,8 +70,9 @@ No extra Python packages: the plugin only uses `httpx`, which ships with Hermes.
 | Hermes Desktop (Windows), per profile | `%LOCALAPPDATA%\hermes\profiles\<profile>\plugins\search-chain\` |
 
 ```bash
-git clone https://github.com/Pressimize/hermes-search-chain.git
-cp -r hermes-search-chain/search_chain "${HERMES_HOME:-$HOME/.hermes}/plugins/search-chain"
+git clone https://github.com/Pressimize/hermes-search-chain.git   # for an update: git -C hermes-search-chain pull --ff-only
+target="${HERMES_HOME:-$HOME/.hermes}/plugins/search-chain"       # or the directory of your row in the table above
+mkdir -p "$target" && cp -r hermes-search-chain/search_chain/. "$target/"
 ```
 
 Then enable it in the profile's `config.yaml` (user plugins are opt-in) and select it:
@@ -140,13 +142,14 @@ Parallel is called on its beta endpoint in mode `agentic`, exactly as Hermes' bu
 
   Two blind judges scored all answers and agreed on every one. With 36 questions only large differences would show; the answers are at the ceiling, so the setups differ in effort, not in correctness.
 - **Fallback:** with an invalid Exa key the log showed `exa=http_401 parallel=ok`, with invalid Exa and Parallel keys `exa=http_401 parallel=http_401 firecrawl=ok`; the model got usable results both times.
+- **External code reviews:** three independent reviews of v0.1.0 found nothing critical. What was adopted is in v0.1.1; what was not is recorded with its reason (design D13–D16).
 - **Not verified:** a really used-up quota (HTTP 402 and the 24-hour pause).
 
 Setup, judging, all tables and limits: [docs/validation.md](docs/validation.md). Questions, per-run results and answers: [`data/end-to-end/`](data/end-to-end).
 
 ## Update and uninstall
 
-- **Update:** replace the `plugins/search-chain/` directory with the new `search_chain/` and restart Hermes. After a Git install, use `hermes plugins update search-chain`. See [CHANGELOG.md](CHANGELOG.md).
+- **Update:** delete `plugins/search-chain/`, copy the new `search_chain/` in its place as in *Installation*, and restart Hermes. Do not run `cp -r search_chain` onto an existing `plugins/search-chain`: that puts the new copy one level deeper, into `plugins/search-chain/search_chain/`, and Hermes keeps loading the old files. After an install with `hermes plugins install`, use `hermes plugins update search-chain`. See [CHANGELOG.md](CHANGELOG.md).
 - **Uninstall:**
   1. Delete `plugins/search-chain/`.
   2. Remove `search-chain` from `plugins.enabled`.
@@ -167,11 +170,13 @@ grep -o "search-chain: .*" logs/agent.log | grep -o "[a-z]*=ok" | sort | uniq -c
 
 - **Fixed providers and order.**
 - **No results is an error.** If no service finds anything, the model gets an error with `no results` instead of an empty list, because Hermes caches every successful result for `web.cache_ttl_minutes` (default 20).
-- **Different result lengths.** Exa (capped) returns about 4,000 characters per search, Parallel about 8,200, Firecrawl about 3,900.
+- **Different result lengths.** Exa (capped) returns about 4,000 characters per search, Parallel about 8,200, Firecrawl about 3,900. A title is cut at 300 characters and a description at 16,000; a description from Firecrawl is cut at 3,000. In the comparison 26 of Firecrawl's 400 descriptions (6.5 %) were longer than that; cutting them changed no verdict.
+- **At most 20 results per search.** Hermes lets the model ask for up to 100; every service is asked for at most 20, because Exa bills each result above 10 extra.
+- **Result texts are third-party content.** Titles and descriptions reach the model as the services send them, apart from the length bounds above. Hermes marks web search results as untrusted data; the plugin does not filter them.
 - **Parallel's quota replies are not documented.** The chain moves on after any failure; only the 24-hour pause depends on the status code being 402.
 - **After a restart** the first search asks every service again, including one with a used-up quota. Without a restart, a renewed or topped-up quota is used only after the 24-hour pause.
 - **Privacy.** Every query is sent to Exa, and possibly to Parallel and Firecrawl.
-- **Timeouts** are 10 s (Exa) and 15 s (Parallel, Firecrawl) for each phase of a request (connect, send, wait for the reply). A search in which every service hangs takes about 40 s; there is no hard limit on the total.
+- **Timeouts** are 10 s (Exa) and 15 s (Parallel, Firecrawl) for each phase of a request (connect, send, wait for the reply), not for the search as a whole. A search in which every service hangs takes about 40 s. It takes longer when a service is slow in several phases or sends its reply in a trickle; Hermes ends a tool call after 420 s by default.
 
 ## FAQ
 
@@ -193,6 +198,7 @@ No. `web.extract_backend` is unaffected; see [hermes-extract-chain](https://gith
 uv sync                                   # Python >= 3.11, httpx as in Hermes
 uv run ruff check && uv run ruff format --check
 uv run pytest
+uv run python scripts/recompute.py         # recomputes the tables of the documents; CI checks that it runs
 ```
 
 | Path | Content |
