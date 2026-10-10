@@ -40,7 +40,9 @@ They come from a comparison of seven search providers on 80 queries without an L
 
 The times of the capped Exa call and of `/v1/search` were measured as direct calls, the others through Hermes, so they are not comparable across rows; inside Hermes both Parallel calls took about 3 s and Exa about 2 s (see *Validation*).
 
-Exa and Parallel are not distinguishable on this data; a difference of a few queries is within the day-to-day variation of the providers. Firecrawl ran on the 20 hardest queries and got 16, against 19 and 18. Exa comes first because the capped call returns the least text for the same hits and is the fastest; it also has the smallest free allowance, so the chain moves on to Parallel during the month. Details: [docs/design.md](docs/design.md).
+Exa and Parallel are not distinguishable on this data; a difference of a few queries is within the day-to-day variation of the providers. Firecrawl ran on the 20 hardest queries and got 16, against 19 and 18. Exa comes first because the capped call returns about half the text of Parallel for the same hits and was faster inside Hermes (1.8 s against 3.0 s per search in the end-to-end test); its free allowance is also smaller than Parallel's, so the chain moves on to Parallel during the month. Firecrawl comes last: it was slightly behind on the hard queries, and its free allowance is the smallest of the three and shared with scraping.
+
+The full comparison, with all seven providers, the tested modes, a simulation of merging providers, costs and the reasons for each choice, is in [docs/evaluation.md](docs/evaluation.md). Every query and per-query result is in [`data/`](data).
 
 ## Requirements
 
@@ -125,7 +127,7 @@ Parallel is called on its beta endpoint in mode `agentic`, exactly as Hermes' bu
 ## Validation
 
 - **Unit tests** without network for every rule of the chain, the provider calls and the settings.
-- **End-to-end with a model** (2026-10-10, Hermes Desktop 0.21.6, model GLM 5.3): 36 questions in German (10 facts, 10 error messages, 16 "latest version of X"), each asked once in four setups through Hermes' real tool path, 144 runs. No run failed, and the intended stage served every search.
+- **End-to-end with a model** (2026-10-10, Hermes Desktop 0.21.6; the model was GLM 5.3, served through Mistral's API): 36 questions in German (10 facts, 10 error messages, 16 "latest version of X"), each asked once in four setups through Hermes' real tool path, 144 runs. No run failed, and the intended stage served every search.
 
   | | Exa capped | Exa uncapped | Parallel `/v1/search` | Parallel beta (as Hermes) |
   |---|---|---|---|---|
@@ -136,6 +138,8 @@ Parallel is called on its beta endpoint in mode `agentic`, exactly as Hermes' bu
   Two blind judges scored all answers and agreed on every one. With 36 questions only large differences would show; the answers are at the ceiling, so the setups differ in effort, not in correctness.
 - **Fallback:** with an invalid Exa key the log showed `exa=http_401 parallel=ok`, with invalid Exa and Parallel keys `exa=http_401 parallel=http_401 firecrawl=ok`; the model got usable results both times.
 - **Not verified:** a really used-up quota (HTTP 402 and the 24-hour pause).
+
+Setup, judging, all tables and limits: [docs/validation.md](docs/validation.md). Questions, per-run results and answers: [`data/end-to-end/`](data/end-to-end).
 
 ## Update and uninstall
 
@@ -192,8 +196,10 @@ uv run pytest
 |---|---|
 | `search_chain/` | The plugin: `provider.py` (Hermes interface, chain, pauses), `engines.py` (REST clients) |
 | `tests/` | Unit tests without network (`httpx.MockTransport`; Hermes is stubbed in `conftest.py`) |
+| `scripts/recompute.py` | Recomputes the tables of the evaluation and validation documents from the CSV files in `data/` |
 | `scripts/live_check.py` | Calls Hermes' real `web_search` path in a profile, without an LLM and with rate limiting; can break keys to force the fallback |
-| `docs/design.md` | Requirements and decisions |
+| `docs/` | [evaluation](docs/evaluation.md) (provider choice, test method, results), [design](docs/design.md) (requirements and decisions with their reasons), [validation](docs/validation.md) (tests, reviews, end-to-end test with a model) |
+| `data/` | Test data as CSV: queries, per-query results of both comparison runs, questions and answers of the end-to-end test ([description](data/README.md)) |
 
 `pyproject.toml` only configures the tooling. It sits at the repository root on purpose: Hermes treats a plugin directory that contains a `pyproject.toml` as a package-manager member.
 

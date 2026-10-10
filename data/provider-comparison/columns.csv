@@ -1,0 +1,21 @@
+column,provider,variant_of,path,call
+tinyfish,tinyfish,,through Hermes,TinyFish's Hermes plugin 0.2.1: GET api.search.tinyfish.ai with the query only
+tinyfish-purpose-fixed,tinyfish,tinyfish,through Hermes,same plugin with one fixed `purpose` sentence for all queries (plugin setting)
+tinyfish-purpose-per-query,tinyfish,tinyfish,direct HTTP call,direct call with `purpose` set to an intent sentence written for each query
+tavily,tavily,,through Hermes,"Hermes' built-in provider: POST /search, default depth (`basic`)"
+tavily-advanced,tavily,tavily,direct HTTP call,direct call with `search_depth: advanced`
+exa,exa,,through Hermes,Hermes' built-in provider (exa-py): search with `contents.highlights: true`
+exa-instant,exa,exa,direct HTTP call,"direct call with `type: instant`, highlights as in Hermes"
+exa-capped,exa,exa,direct HTTP call,direct call with `contents.highlights.maxCharacters: 600`
+parallel,parallel,,through Hermes,"Hermes' built-in provider (parallel-web 0.4.2): beta endpoint, mode `agentic`"
+parallel-beta-fast,parallel,parallel,through Hermes,"Hermes' built-in provider with PARALLEL_SEARCH_MODE=fast: beta endpoint, mode `fast`"
+parallel-v1-advanced,parallel,parallel,direct HTTP call,"direct call to /v1/search, mode `advanced`"
+parallel-v1-fast,parallel,parallel,direct HTTP call,"direct call to /v1/search, mode `fast`"
+parallel-v1-fast-objective,parallel,parallel,direct HTTP call,"direct call to /v1/search, mode `fast`, `objective` set to an intent sentence per query"
+firecrawl,firecrawl,,through Hermes,Hermes' built-in provider (firecrawl-py): search with query and limit
+keenable,keenable,,through Hermes,Hermes' built-in provider: POST /v1/search
+keenable-capped,keenable,keenable,direct HTTP call,direct call with `snippet_max_length: 600`
+brave,brave,,through Hermes,"Hermes' built-in provider: GET /res/v1/web/search, description only"
+brave-extra-snippets,brave,brave,direct HTTP call,"direct call to /res/v1/web/search with `extra_snippets`, description and extra snippets joined"
+brave-llm-context,brave,brave,direct HTTP call,"direct call to /res/v1/llm/context, default token budget"
+brave-llm-context-lean,brave,brave,direct HTTP call,"direct call to /res/v1/llm/context with 5,120 tokens in total and 512 per URL"
