@@ -45,7 +45,7 @@ def median(values):
 
 
 def main():
-    print("Run 1: correct from the result list and with result pages, of 55; current version in a snippet, of 10; medians")
+    print("Run 1: correct from the result list and with result pages, of 55; current version in a snippet, of 10")
     run1 = rows("provider-comparison/run1-results.csv")
     for column in ("exa", "parallel", "firecrawl", "tinyfish", "brave", "tavily", "keenable"):
         mine = [r for r in run1 if r["column"] == column]
