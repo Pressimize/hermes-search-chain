@@ -64,14 +64,14 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
 
   | Reply | Pause | Meaning |
   |---|---|---|
-  | HTTP 402 | 3,600 s | quota or budget used up |
+  | HTTP 402 | 86,400 s (24 h) | quota or budget used up |
   | HTTP 429 | 60 s | rate limit |
   | anything else | none | |
 
   - A pause belongs to the pair of stage and key, so profiles with different keys in one process do not pause each other, and a corrected key is used at once.
   - Pauses live in memory only. A new process starts without pauses; a wrong pause ends by itself.
   - After the pause, the stage is asked again on the next call. Nothing needs to be reset when a quota renews.
-  - The reason of a paused stage repeats the reply that caused the pause and the remaining time, e.g. `Exa: HTTP 402 NO_MORE_CREDITS (paused for another 42 min)`.
+  - The reason of a paused stage repeats the reply that caused the pause and the remaining time, e.g. `Exa: HTTP 402 NO_MORE_CREDITS (paused for another 17 h)`; below one hour it is given in minutes.
   - Hermes may run several searches at once on one provider object. The pause table is a plain dict without a lock: calls already in flight when the first quota reply arrives each get their own reply and set the same pause again.
 - **K6** When no stage returned rows, the call fails, and the error names the reason of every stage, e.g. `search-chain: Exa: HTTP 402 NO_MORE_CREDITS; Parallel: no API key; Firecrawl: timeout`. A valid reply without rows has the reason `no results`. This is a failure and not an empty success, because Hermes caches every success for `web.cache_ttl_minutes`; an empty list that only came about because a better stage was paused would otherwise be repeated for that time.
 - **K7** Each stage is asked at most once per call. No retries.
@@ -144,6 +144,7 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
 - Whether a provider answers HTTP 402 or bills a stored payment method when the free quota is used up depends on the account settings (auto recharge, budgets). For a hard cost cap, keep auto recharge off.
 - Parallel does not document its replies for a used-up quota. The chain moves on after any failure, so only the length of the pause depends on the status code.
 - After a restart the first call asks every stage again, including one with a used-up quota.
+- A renewed or topped-up quota is used only when the 24-hour pause ends or Hermes restarts.
 - A search that finds nothing at any stage is reported as a failure with `no results` (K6).
 - Results of different stages differ in length: Exa capped about 4,000 characters per search, Parallel about 8,400, Firecrawl about 3,900 (medians for 5 results).
 - Hermes caches successful results for `web.cache_ttl_minutes` (default 20).
@@ -157,7 +158,7 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
 | D1 | Direct REST calls, not Hermes' built-in providers | The built-in Exa, Parallel and Firecrawl providers need vendor SDKs that Hermes installs on first use; in container deployments that runtime install can disturb the image's package set. Direct calls give exact status codes for K5 and reach Exa's highlight cap, which the built-in provider does not expose. |
 | D2 | Parallel via `/v1/search` in mode `advanced`, not the beta endpoint Hermes 0.21.6 calls | Parallel's documentation reserves the beta endpoint for existing integrations. In the comparison `advanced` showed no detectable difference to the beta call (70 against 72 of 75) and was faster. Mode `fast` on `/v1/search` was clearly worse (49 of 75) and is not used. |
 | D3 | Exa highlights capped at 600 characters, adjustable by one setting | No detectable loss (74 against 73 of 75) at one third of the text; same price. The comparison ran without an LLM, so an effect on answer quality is not measured; the setting allows switching the cap off. |
-| D4 | Pauses in memory, fixed lengths, only for HTTP 402 and 429 | No files, no calendar logic, self-healing. A pause that is too long costs at most an hour of the stage; one that is too short costs one failing request. A rejected key (401, 403) is a configuration error that should stay visible in every log line. |
+| D4 | Pauses in memory, fixed lengths, only for HTTP 402 and 429 | No files, no calendar logic, self-healing. A quota does not come back within hours, so the pause after HTTP 402 is a day: at most one failing request per day and stage, and a renewed quota is picked up within a day (at once after a restart). A pause that is too short costs one failing request. A rejected key (401, 403) is a configuration error that should stay visible in every log line. |
 | D5 | A reply without rows moves on to the next stage; no rows at all is a failure with the reason `no results` | Cheap and rare (no empty reply in 1,540 searches of the comparison); another index may have hits. A failure is not cached by Hermes (K6). |
 | D6 | No note for the model about the serving stage | All three are live web searches; the model does not need to treat the results differently. The log line shows the stage. |
 | D7 | Synchronous `httpx.Client` | Hermes calls `search` synchronously. |

@@ -21,8 +21,8 @@ flowchart LR
 
 - Each service is asked at most once per search; there are no retries.
 - A service without a key is skipped.
-- After **HTTP 402** (quota or budget used up) a service is skipped for one hour, after **HTTP 429** (rate limit) for one minute. Then it is asked again, so nothing has to be reset when a quota renews. Pauses live in memory only.
-- If no service returns results, the model gets one error with every reason, e.g. `search-chain: Exa: HTTP 402 NO_MORE_CREDITS (paused for another 42 min); Parallel: timeout; Firecrawl: no results`.
+- After **HTTP 402** (quota or budget used up) a service is skipped for 24 hours, after **HTTP 429** (rate limit) for one minute. Then it is asked again, so nothing has to be reset when a quota renews. Pauses live in memory only; restarting Hermes ends them.
+- If no service returns results, the model gets one error with every reason, e.g. `search-chain: Exa: HTTP 402 NO_MORE_CREDITS (paused for another 17 h); Parallel: timeout; Firecrawl: no results`.
 
 The model gets the same result format as from any Hermes search provider. It is not told which service answered; the log is (see *Check*).
 
@@ -105,7 +105,7 @@ search-chain: exa=http_402 parallel=ok
 search-chain: exa=paused parallel=ok
 ```
 
-When a pause starts, `logs/errors.log` gets a line such as `search-chain: exa paused for 3600 s (HTTP 402 NO_MORE_CREDITS)`.
+When a pause starts, `logs/errors.log` gets a line such as `search-chain: exa paused for 86400 s (HTTP 402 NO_MORE_CREDITS)`.
 
 ## Settings
 
@@ -141,8 +141,8 @@ grep -o "search-chain: .*" logs/agent.log | grep -o "[a-z]*=ok" | sort | uniq -c
 - **Fixed providers and order.**
 - **No results is an error.** If no service finds anything, the model gets an error with `no results` instead of an empty list, because Hermes caches every successful result for `web.cache_ttl_minutes` (default 20).
 - **Different result lengths.** Exa (capped) returns about 4,000 characters per search, Parallel about 8,400, Firecrawl about 3,900.
-- **Parallel's quota replies are not documented.** The chain moves on after any failure; only the one-hour pause depends on the status code being 402.
-- **After a restart** the first search asks every service again, including one with a used-up quota.
+- **Parallel's quota replies are not documented.** The chain moves on after any failure; only the 24-hour pause depends on the status code being 402.
+- **After a restart** the first search asks every service again, including one with a used-up quota. Without a restart, a renewed or topped-up quota is used only after the 24-hour pause.
 - **Privacy.** Every query is sent to Exa, and possibly to Parallel and Firecrawl.
 - **Timeouts** are 10 s (Exa) and 15 s (Parallel, Firecrawl) for each phase of a request (connect, send, wait for the reply). A search in which every service hangs takes about 40 s; there is no hard limit on the total.
 

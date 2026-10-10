@@ -206,7 +206,7 @@ def test_no_keys_at_all(env, logs):
 # --- K5 pauses ------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("code", "seconds"), [(402, 3600), (429, 60)])
+@pytest.mark.parametrize(("code", "seconds"), [(402, 86400), (429, 60)])
 def test_pause_after_quota_and_rate_limit(env, logs, code, seconds):
     clock = Clock()
     api = Api(exa=status(code, {"tag": "TAG"}))
@@ -254,11 +254,26 @@ def test_all_stages_paused_or_without_key(env, logs):
     result = p.search("q")
     assert result == {
         "success": False,
-        "error": "search-chain: Exa: HTTP 402 NO_MORE_CREDITS (paused for another 60 min); "
+        "error": "search-chain: Exa: HTTP 402 NO_MORE_CREDITS (paused for another 24 h); "
         "Parallel: HTTP 429 slow down (paused for another 1 min); Firecrawl: no API key",
     }
     assert api.hosts() == [EXA, PARALLEL]  # the second call sent nothing
     assert lines(logs)[-1] == "search-chain: exa=paused parallel=paused firecrawl=no_key"
+
+
+@pytest.mark.parametrize(
+    ("after", "left"),
+    [(0, "24 h"), (3600, "23 h"), (82799, "2 h"), (82800, "60 min"), (86340, "1 min"), (86399, "1 min")],
+)
+def test_remaining_pause_in_the_error_text(env, after, left):
+    del env["PARALLEL_API_KEY"], env["FIRECRAWL_API_KEY"]
+    clock = Clock()
+    p = chain(Api(exa=status(402, {"tag": "NO_MORE_CREDITS"})), clock)
+    p.search("q")
+    clock.now += after
+    assert p.search("q")["error"].startswith(
+        f"search-chain: Exa: HTTP 402 NO_MORE_CREDITS (paused for another {left});"
+    )
 
 
 # --- A1 setting -----------------------------------------------------------------------------------

@@ -15,7 +15,7 @@ from . import engines
 
 NAME = "search-chain"
 HIGHLIGHT_SETTING = "SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS"
-PAUSES = {402: 3600, 429: 60}  # K5: seconds a stage is skipped after this HTTP status
+PAUSES = {402: 86400, 429: 60}  # K5: seconds a stage is skipped after this HTTP status
 log = logging.getLogger(__name__)
 
 # S6: same convention as Hermes' built-in providers for /stop and new user messages.
@@ -47,6 +47,11 @@ STAGES = (
     ("parallel", "Parallel", "PARALLEL_API_KEY", engines.parallel),
     ("firecrawl", "Firecrawl", "FIRECRAWL_API_KEY", engines.firecrawl),
 )
+
+
+def _left(seconds: float) -> str:
+    """Remaining pause for the error text, rounded up."""
+    return f"{math.ceil(seconds / 3600)} h" if seconds > 3600 else f"{math.ceil(seconds / 60)} min"
 
 
 def _failed(error: str) -> dict:
@@ -103,7 +108,7 @@ class SearchChainProvider(WebSearchProvider):
                 until, reason = self._paused.get((stage, key), (0.0, ""))
                 if (left := until - self._clock()) > 0:
                     steps.append(f"{stage}=paused")
-                    reasons.append(f"{reason} (paused for another {math.ceil(left / 60)} min)")
+                    reasons.append(f"{reason} (paused for another {_left(left)})")
                     continue
                 result = call(client, query, limit, key)
                 if result.get("rows"):  # K3
