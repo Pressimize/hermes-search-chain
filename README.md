@@ -36,11 +36,14 @@ They come from a comparison of seven search providers on 80 queries without an L
 | Exa, as Hermes calls it | 73 | 12,000 characters | 2.0 s |
 | Parallel, as Hermes calls it | 72 | 8,200 characters | 2.9 s |
 | Parallel, `/v1/search`, mode `advanced` | 70 | 8,400 characters | 1.8 s |
+| Firecrawl, as Hermes calls it | 65 \* | 3,900 characters | 1.3 s |
 | TinyFish, Brave, Tavily, Keenable | 50 to 54 | | |
+
+\* Firecrawl's figure combines two runs: 49 of the 55 queries of the first run (2026-10-09) and 16 of the 20 harder queries added for the second run, a day later. In the second run it ran only on those 20, to save its small free allowance; it has no second mode to compare. Results shift by a few queries from one day to the next, so the 65 is less exact than the other figures. Its text and time are from those 20 queries.
 
 The times of the capped Exa call and of `/v1/search` were measured as direct calls, the others through Hermes, so they are not comparable across rows; inside Hermes both Parallel calls took about 3 s and Exa about 2 s (see *Validation*).
 
-Exa and Parallel are not distinguishable on this data; a difference of a few queries is within the day-to-day variation of the providers. Firecrawl ran on the 20 hardest queries and got 16, against 19 and 18. Exa comes first because the capped call returns about half the text of Parallel for the same hits and was faster inside Hermes (1.8 s against 3.0 s per search in the end-to-end test); its free allowance is also smaller than Parallel's, so the chain moves on to Parallel during the month. Firecrawl comes last: it was slightly behind on the hard queries, and its free allowance is the smallest of the three and shared with scraping.
+Exa and Parallel are not distinguishable on this data; a difference of a few queries is within the day-to-day variation of the providers. Firecrawl is third, ahead of the other four. On the 20 harder queries it got 16 (Exa 19, Parallel 18). On the 55 queries of the first run it got 49 when only the result list counts (Exa 55, Parallel 52), and 53 when an answer found only on a result page counts as well (Exa 55, Parallel 53): its snippets are short, so the fix for an error message is often only on the page. Exa comes first because the capped call returns about half the text of Parallel for the same hits and was faster inside Hermes (1.8 s against 3.0 s per search in the end-to-end test). Being first, it is also the first to use up its free allowance, which is smaller than Parallel's; the chain then carries on with Parallel. Firecrawl comes last: from the result list it scored lowest of the three, and its free allowance is the smallest and shared with scraping, so the chain spares it.
 
 The full comparison, with all seven providers, the tested modes, a simulation of merging providers, costs and the reasons for each choice, is in [docs/evaluation.md](docs/evaluation.md). Every query and per-query result is in [`data/`](data).
 

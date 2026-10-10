@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Documentation: the provider tables in the README, `docs/design.md` and `docs/evaluation.md` now show Firecrawl (65 of 75, put together from run 1 and the extra queries of run 2). The text gives its run 1 score from the result list (49 of 55) next to the one with result pages (53 of 55) and no longer calls it "slightly behind". `scripts/recompute.py` prints the result-list totals of run 1. No change to the plugin.
+
 ## 0.1.0 – 2026-10-10
 
 - First version: `search-chain` provider for `web_search` with the chain Exa → Parallel → Firecrawl.

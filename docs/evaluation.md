@@ -3,7 +3,7 @@
 The chain Exa → Parallel → Firecrawl is the result of four steps taken on 2026-10-09 and 2026-10-10 with Hermes Agent 0.21.6:
 
 1. **Run 1 – provider comparison:** seven search providers exactly as Hermes calls them, 60 queries, without an LLM.
-2. **Run 2 – mode comparison:** the same providers plus 13 variants that use better modes or parameters of their APIs, 80 queries, without an LLM.
+2. **Run 2 – mode comparison:** the same providers (Firecrawl only on the 20 added queries) plus 13 variants that use better modes or parameters of their APIs, 80 queries, without an LLM.
 3. **Simulation:** would merging the results of several providers help?
 4. **End-to-end test with a model:** the finished plugin in four setups, 36 questions. It is described in [validation.md](validation.md).
 
@@ -37,6 +37,7 @@ Calls: Exa via its SDK with highlights, Parallel via its SDK on the beta endpoin
 | | Exa | Parallel | Firecrawl | TinyFish | Brave | Tavily | Keenable |
 |---|---|---|---|---|---|---|---|
 | **Correct, of 55** (with result pages) | **55** | **53** | **53** | **50** | **46** | **41** | **40** |
+| Correct, of 55, from the result list alone | 55 | 52 | 49 | 46 | 42 | 40 | 40 |
 | official: found, of 15 (at rank 1) | 15 (14) | 15 (13) | 15 (14) | 15 (13) | 13 (12) | 11 (3) | 10 (7) |
 | german: found, of 5 | 5 | 5 | 5 | 5 | 5 | 5 | 3 |
 | niche: found, of 5 | 5 | 4 | 4 | 5 | 4 | 4 | 3 |
@@ -61,19 +62,22 @@ No request failed and no provider returned an empty list.
 
 ## Run 2 – better modes of the same providers (2026-10-10)
 
-Hermes calls every provider in a simple mode. Run 2 repeated the baselines and added variants, each compared with its own baseline in the same run. Columns and their exact calls: [columns.csv](../data/provider-comparison/columns.csv); results: [run2-results.csv](../data/provider-comparison/run2-results.csv). Firecrawl ran only on the extra block.
+Hermes calls every provider in a simple mode. Run 2 repeated the baselines and added variants, each compared with its own baseline in the same run. Columns and their exact calls: [columns.csv](../data/provider-comparison/columns.csv); results: [run2-results.csv](../data/provider-comparison/run2-results.csv). Firecrawl ran only on the extra block, to save its small free allowance: it has no variant to compare, and its main-set results are in run 1.
 
 **Baselines**
 
 | | Exa | Parallel | Firecrawl | TinyFish | Brave | Tavily | Keenable |
 |---|---|---|---|---|---|---|---|
-| **Correct, of 75** (result list) | **73** | **72** | – | **54** | **53** | **50** | **50** |
+| **Correct, of 75** (result list) | **73** | **72** | 65 \* | **54** | **53** | **50** | **50** |
 | Main set, result list, of 55 | 54 | 54 | not run | 43 | 43 | 39 | 44 |
 | Main set, with result pages, of 55 | 54 | 55 | not run | 47 | 46 | 41 | 44 |
 | For comparison: run 1, with result pages | 55 | 53 | 53 | 50 | 46 | 41 | 40 |
+| For comparison: run 1, result list | 55 | 52 | 49 | 46 | 42 | 40 | 40 |
 | Extra block, of 20 | 19 | 18 | 16 | 11 | 10 | 11 | 6 |
 | current version in a snippet, both sets, of 16 | 16 | 16 | 6 of 6 | 6 | 5 | 5 | 4 |
 | Characters per search, median (main set) | 12,000 | 8,200 | 3,900 (extra block) | 1,850 | 2,500 | 7,050 | 11,800 |
+
+\* Firecrawl has no figure of 75 from one run. The 65 is 49 of the 55 (result list, run 1) plus 16 of the 20 on the extra block (run 2). Counted the same way, the baseline calls of the others reach: Exa 74, Parallel 70, TinyFish 57, Brave 52, Tavily 51, Keenable 46. Because of the day-to-day variation described below, a figure put together from two days is less exact than one from a single run.
 
 - **The order stays.** Exa and Parallel lead, Firecrawl follows on the block it ran, then TinyFish, Brave, Tavily and Keenable with a clear gap.
 - **The extra block separates what the main set did not:** the top three stay at 16 to 19 of 20, the other four fall to 6 to 11.
@@ -147,9 +151,9 @@ As read on the vendors' pages on 2026-10-09 and 2026-10-10; check them before re
 
 ## Decision
 
-- **Exa first.** Best or tied for best in both runs (55 of 55; 73 of 75), with the current version in the snippet for all 16 version questions of run 2. With highlights capped it returns about half the text of Parallel for the same hits (about as little as Firecrawl), and inside Hermes it was the faster of the two (1.8 s against 3.0 s per search, [validation.md](validation.md)). Its free allowance is smaller than Parallel's, so it is used first and the chain moves on when it runs out.
-- **Parallel second.** Not distinguishable from Exa on the hits (53 of 55; 72 of 75), also 16 of 16 on current versions, with the largest free allowance of the three. It is called on the beta endpoint in mode `agentic`, as Hermes does: this call was never worse than `/v1/search` in two tests ([design.md](design.md), D2).
-- **Firecrawl third.** 53 of 55 in run 1, 16 of 20 on the harder block, current versions in all six of its version questions. Its free allowance is the smallest of the three and shared with scraping, so it is the last resort.
+- **Exa first.** Best or tied for best in both runs (run 1, with result pages: 55 of 55; run 2, result list: 73 of 75), with the current version in the snippet for all 16 version questions of run 2. With highlights capped it returns about half the text of Parallel for the same hits (about as little as Firecrawl), and inside Hermes it was the faster of the two (1.8 s against 3.0 s per search, [validation.md](validation.md)). Being first, it is also the first to use up its free allowance, which is smaller than Parallel's; the chain then carries on with Parallel.
+- **Parallel second.** Not distinguishable from Exa on the hits (run 1, with result pages: 53 of 55; run 2, result list: 72 of 75), also 16 of 16 on current versions, with the largest free allowance of the three. It is called on the beta endpoint in mode `agentic`, as Hermes does: this call was never worse than `/v1/search` in two tests ([design.md](design.md), D2).
+- **Firecrawl third.** In run 1 it got 49 of 55 from the result list (Exa 55, Parallel 52) and 53 of 55 with result pages (Exa 55, Parallel 53), on the extra block 16 of 20 (Exa 19, Parallel 18), with the current version in all six of its version questions there. Against Exa in run 1, Exa alone was right on 6 queries from the result list (p 0.03: below 0.05, but far from the 0.003 of the strict correction) and on 2 with result pages (p 0.5). Four of its six misses from the result list are error messages whose fix is only on the result page: its snippets are short. From the result list it scored lowest of the three, and it is ahead of the other four. Its free allowance is the smallest of the three and shared with scraping, so the chain spares it: it is the last resort.
 - **Not in the chain:**
   - **TinyFish** is free and finds official documentation well, but its snippets often show an older version (6 of 16 current in run 2), and it falls behind on the harder block (11 of 20).
   - **Brave** improves a lot with the LLM Context endpoint but stays behind the top three and needs a credit card.

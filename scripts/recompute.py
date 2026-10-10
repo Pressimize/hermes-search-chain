@@ -45,14 +45,15 @@ def median(values):
 
 
 def main():
-    print("Run 1: correct with result pages, of 55; current version in a snippet, of 10; medians")
+    print("Run 1: correct from the result list and with result pages, of 55; current version in a snippet, of 10; medians")
     run1 = rows("provider-comparison/run1-results.csv")
     for column in ("exa", "parallel", "firecrawl", "tinyfish", "brave", "tavily", "keenable"):
         mine = [r for r in run1 if r["column"] == column]
+        listed = sum(int(r["correct_from_result_list"]) for r in mine if r["correct_from_result_list"] != "")
         total = sum(int(r["correct_with_result_pages"]) for r in mine if r["correct_with_result_pages"] != "")
         current = sum(r["detail"].startswith("snippet: current version") for r in mine)
         seconds, chars = median(r["seconds"] for r in mine), median(r["chars"] for r in mine)
-        print(f"  {column:10s} {total:3d}  current {current:2d}  {seconds} s  {chars} chars")
+        print(f"  {column:10s} {listed:3d} {total:3d}  current {current:2d}  {seconds} s  {chars} chars")
 
     print("\nRun 2: correct from the result list (main set of 55, extra block of 20, both)")
     run2 = rows("provider-comparison/run2-results.csv")
