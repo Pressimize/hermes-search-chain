@@ -1,7 +1,7 @@
 name: search-chain
 version: 0.1.0
 description: "web_search fallback chain: Exa -> Parallel -> Firecrawl; moves on when a stage fails or its quota is used up"
-author: Pressimize
+author: "Pressimize and Claude (Anthropic)"
 license: MIT
 homepage: "https://github.com/Pressimize/hermes-search-chain"
 kind: backend
