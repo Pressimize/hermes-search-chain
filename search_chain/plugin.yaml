@@ -1,0 +1,20 @@
+name: search-chain
+version: 0.1.0
+description: "web_search fallback chain: Exa -> Parallel -> Firecrawl; moves on when a stage fails or its quota is used up"
+author: Pressimize
+license: MIT
+homepage: "https://github.com/Pressimize/hermes-search-chain"
+kind: backend
+requires_hermes: ">=0.21"
+provides_web_providers:
+  - search-chain
+requires_env:
+  - name: EXA_API_KEY
+    description: "Exa API key (stage 1, skipped if unset)"
+    secret: true
+  - name: PARALLEL_API_KEY
+    description: "Parallel API key (stage 2, skipped if unset)"
+    secret: true
+  - name: FIRECRAWL_API_KEY
+    description: "Firecrawl API key (stage 3, skipped if unset)"
+    secret: true
