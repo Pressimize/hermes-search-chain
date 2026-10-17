@@ -92,6 +92,13 @@ def test_rows_without_a_web_url_are_dropped(url):
     assert out == {"rows": [{"url": "HTTPS://A.example/", "title": "kept", "description": "", "position": 1}]}
 
 
+def test_http_urls_are_kept_in_any_letter_case():
+    """S4: both schemes count, in any letter case; the URL is passed on as sent."""
+    urls = ["http://a.example/", "HTTP://B.example/", "Https://c.example/"]
+    out = call(engines.exa, reply({"results": [{"url": u} for u in urls]}), "q", 5, "k")
+    assert [row["url"] for row in out["rows"]] == urls
+
+
 def test_title_and_description_that_are_no_text_become_empty():
     web = [{"url": "https://a.example/", "title": 7, "description": {"d": 1}}]
     out = call(engines.firecrawl, reply({"success": True, "data": {"web": web}}), "q", 5, "k")
@@ -184,7 +191,10 @@ def test_firecrawl_without_web_results_is_empty():
     assert call(engines.firecrawl, reply({"success": True, "data": {"news": []}}), "q", 5, "k") == {"rows": []}
 
 
-@pytest.mark.parametrize("body", [{"success": False, "data": {"web": []}}, {"success": True, "data": []}, {}])
+@pytest.mark.parametrize(
+    "body",
+    [{"success": False, "data": {"web": []}}, {"success": False, "error": " \n "}, {"success": True, "data": []}, {}],
+)
 def test_firecrawl_unexpected_reply(body):
     out = call(engines.firecrawl, reply(body), "q", 5, "k")
     assert out == {"error": "Firecrawl: malformed reply", "code": "malformed", "status": None}
@@ -226,7 +236,7 @@ def test_api_error_detail(fn, name, body, detail):
 
 
 @pytest.mark.parametrize(("fn", "name"), ENGINES)
-@pytest.mark.parametrize("code", [199, 302, 400])
+@pytest.mark.parametrize("code", [199, 300, 302, 400])
 def test_only_2xx_is_a_reply(fn, name, code):
     body = {
         "success": True,
@@ -307,6 +317,13 @@ def test_only_a_value_of_8_characters_or_more_is_masked():
     assert out["error"] == "Exa: HTTP 401 bad key 1234567"
     out = call(engines.exa, reply({"error": "bad key 12345678"}, 401), "q", 5, "12345678")
     assert out["error"] == "Exa: HTTP 401 bad key [key]"
+
+
+def test_key_is_masked_in_any_case_and_percent_encoded():
+    """S3: as in extract-chain."""
+    text = "keys EXA-SE/CRET+X and exa-SE%2FCRET%2Bx and exa-se%2fcret%2bx rejected"
+    out = call(engines.exa, reply({"error": text}, 401), "q", 5, "exa-SE/CRET+x")
+    assert out["error"] == "Exa: HTTP 401 keys [key] and [key] and [key] rejected"
 
 
 def test_key_is_masked_before_the_text_is_shortened(monkeypatch):

@@ -1,5 +1,5 @@
 name: search-chain
-version: 0.1.1
+version: 0.1.2
 description: "web_search fallback chain: Exa -> Parallel -> Firecrawl; moves on when a stage fails or its quota is used up"
 author: "Pressimize and Claude (Anthropic)"
 license: MIT

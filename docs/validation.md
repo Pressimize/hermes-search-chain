@@ -6,7 +6,7 @@ How the plugin was checked against [design.md](design.md). Requirement IDs refer
 |---|---|
 | T1 Unit tests | nothing leaves the machine |
 | T2 Live check through Hermes | Exa serves; with broken keys Parallel and Firecrawl serve |
-| T3 Reviews | two reviews against the design, findings fixed; three external code reviews of v0.1.0, adopted in v0.1.1 |
+| T3 Reviews | two reviews against the design, findings fixed; three external code reviews of v0.1.0, adopted in v0.1.1; a review by seven models and a mutation run before v0.1.2 |
 | T4 Lint and CI | clean; Python 3.11 and 3.14 |
 | T5 End-to-end test with a model | 144 runs without a failure; 34 to 36 of 36 answers correct in every setup |
 | Not verified | a really used-up quota (HTTP 402 and the 24-hour pause) |
@@ -34,7 +34,8 @@ An invalid key (HTTP 401) starts no pause, so every call tries the stage again; 
 - **Smoke test against the real Hermes classes** (Hermes Desktop 0.21.6, Python 3.14): the provider instantiates against the real base class, reads keys through Hermes, and returned ten rows in the required shape from a live Firecrawl search.
 - **Documents and data before publication:** a reviewer recomputed the tables of this document and of evaluation.md from the CSV files and checked the decisions for traceable reasons; the mismatches found were corrected.
 - **Three external code reviews of v0.1.0** (2026-10-10 and 2026-10-11), each by an independent reviewer: no critical defect, 52 findings, many of them shared. Each was checked against the code, against Hermes 0.21.6 and, where it claimed a cost, against a measurement. What was reproduced and adopted is in the [changelog of 0.1.1](../CHANGELOG.md); the bounds on result texts were checked on the stored results of both comparison runs (D12); what was declined is in D13–D16.
-- **Review of the v0.1.1 change itself:** plan and code were reviewed (23 mutations, 20 caught, tests added for the other three), and a further reviewer compared the documents with the code. A key that cannot be encoded would have stopped the whole chain instead of its own stage; that is fixed and tested (changelog, *Unreleased*).
+- **Review of the v0.1.1 change itself:** plan and code were reviewed (23 mutations, 20 caught, tests added for the other three), and a further reviewer compared the documents with the code. A key that cannot be encoded would have stopped the whole chain instead of its own stage; that was fixed and tested before the release.
+- **Before v0.1.2:** a review by seven free models and Claude, every point checked against the code ([reviews/2026-10-17.md](reviews/2026-10-17.md)); a mutation run with mutmut 3.3.1, whose 18 surviving mutants were 9 equivalent ones and 9 test gaps, now closed; and v0.1.1 and v0.1.2 run side by side on 4,101 simulated replies: the requests were identical, and every difference in the results is in the [changelog of 0.1.2](../CHANGELOG.md) except one blank-reason case it found, which was fixed.
 
 ## T4 – Lint and CI
 

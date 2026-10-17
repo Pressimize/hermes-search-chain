@@ -6,7 +6,9 @@ else ``{"error": "<Provider>: <detail>", "code": "<short code>", "status": <HTTP
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
+from urllib.parse import quote
 
 import httpx
 
@@ -32,8 +34,9 @@ FIRECRAWL_TEXT_MAX = 3000  # A3, D12
 
 def _error(provider: str, detail: object, code: str, key: str, status: int | None = None) -> dict:
     text = str(detail)
-    if len(key) >= KEY_MIN:  # S3: a reply that echoes the key must not carry it into the result
-        text = text.replace(key, "[key]")
+    forms = {key, quote(key, safe="", errors="surrogatepass")} if len(key) >= KEY_MIN else ()
+    for form in forms:  # S3: a reply that echoes the key, as sent or percent-encoded and in any case
+        text = re.sub(re.escape(form), "[key]", text, flags=re.IGNORECASE)
     # A4: one line of printable characters, so a reply cannot add lines to the log
     text = " ".join("".join(c if c.isprintable() else " " for c in text[:ERROR_SCAN]).split())
     return {"error": f"{provider}: {text[:ERROR_MAX]}", "code": code, "status": status}
@@ -71,7 +74,7 @@ def _post(
     try:
         try:
             response = client.post(url, json=body, headers=headers, timeout=timeout)
-        except ValueError as exc:  # e.g. a key or query httpx cannot encode: nothing was sent, so no reply (A4)
+        except ValueError as exc:  # e.g. a key or query httpx cannot encode: no reply was read (A4)
             return None, _error(provider, type(exc).__name__, type(exc).__name__, key)
         if not 200 <= response.status_code < 300:
             status = response.status_code
@@ -155,8 +158,10 @@ def firecrawl(client: httpx.Client, query: str, limit: int, key: str) -> dict:
     data, error = _post(client, "Firecrawl", FIRECRAWL_URL, key, FIRECRAWL_TIMEOUT, headers, body)
     if error:
         return error
-    if data.get("success") is False and (reason := _reason(data)):  # A3: a 2xx reply that reports a failure
-        return _error("Firecrawl", reason, "rejected", key)
+    if data.get("success") is False:  # A3: a 2xx reply that reports a failure keeps its reason, if it has one
+        rejected = _error("Firecrawl", _reason(data), "rejected", key)
+        if rejected["error"] != "Firecrawl: ":
+            return rejected
     payload = data.get("data")
     if data.get("success") is not True or not isinstance(payload, dict):
         return _malformed("Firecrawl", key)

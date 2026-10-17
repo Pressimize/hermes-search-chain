@@ -143,6 +143,19 @@ def test_exa_serves_and_nothing_else_is_asked(env, logs):
     assert lines(logs) == ["search-chain: exa=ok"]
 
 
+def test_query_reaches_every_stage(env):
+    """K1, A1-A3: each stage is asked the query as given."""
+    api = Api(exa=empty, parallel=empty, firecrawl=empty)
+    chain(api).search("what is x")
+    exa, parallel, firecrawl = (json.loads(request.content) for request in api.requests)
+    assert (exa["query"], parallel["objective"], parallel["search_queries"], firecrawl["query"]) == (
+        "what is x",
+        "what is x",
+        ["what is x"],
+        "what is x",
+    )
+
+
 def test_default_limit_is_5(env):
     api = Api()
     chain(api).search("q")
@@ -252,6 +265,15 @@ def test_no_pause_after_other_failures(env, logs, failure):
     assert lines(logs, logging.WARNING) == []
 
 
+def test_stage_without_a_pause_is_asked_at_any_clock_value(env):
+    """K5: only a quota or rate-limit reply pauses a stage, whatever the clock reads."""
+    clock = Clock()
+    clock.now = 0.0
+    api = Api()
+    assert served_by(chain(api, clock).search("q")) == "E"
+    assert api.hosts() == [EXA]
+
+
 def test_pause_belongs_to_the_key(env):
     api = Api(exa=status(402))
     p = chain(api)
@@ -286,6 +308,14 @@ def test_pause_warning_is_one_line(env, logs):
         "search-chain: exa paused for 86400 s (HTTP 402 NO_CREDITS ERROR forged line)"
     ]
     assert not any("\n" in record.getMessage() for record in logs.records)
+
+
+def test_pause_warning_names_the_whole_reason(env, logs):
+    """L2: a reason that itself contains ": " is logged in full."""
+    chain(Api(exa=status(402, {"error": "Payment Required: Insufficient credits"}))).search("q")
+    assert lines(logs, logging.WARNING) == [
+        "search-chain: exa paused for 86400 s (HTTP 402 Payment Required: Insufficient credits)"
+    ]
 
 
 def test_all_stages_paused_or_without_key(env, logs):
