@@ -3,5 +3,4 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
-# Live-check output; keep it outside the repo.
-out/
+.coverage

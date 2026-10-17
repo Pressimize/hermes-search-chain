@@ -1,5 +1,6 @@
 import json
 import logging
+import tomllib
 from pathlib import Path
 
 import httpx
@@ -102,6 +103,12 @@ def test_manifest_and_register():
     assert len(registered) == 1 and isinstance(registered[0], SearchChainProvider)
 
 
+def test_plugin_and_project_versions_agree():
+    manifest = yaml.safe_load((Path(search_chain.__file__).parent / "plugin.yaml").read_text(encoding="utf-8"))
+    project = tomllib.loads((Path(search_chain.__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+    assert manifest["version"] == project["project"]["version"]
+
+
 def test_properties(env):
     p = SearchChainProvider()
     assert p.name == "search-chain"
@@ -168,14 +175,30 @@ def test_missing_key_skips_the_stage_without_request(env, logs):
 # --- K6 -------------------------------------------------------------------------------------------
 
 
-def test_all_stages_fail(env, logs):
-    api = Api(exa=status(402, {"tag": "NO_MORE_CREDITS"}), parallel=timeout, firecrawl=status(500, {"error": "boom"}))
-    result = chain(api).search("q")
-    assert result == {
-        "success": False,
-        "error": "search-chain: Exa: HTTP 402 NO_MORE_CREDITS; Parallel: timeout; Firecrawl: HTTP 500 boom",
-    }
-    assert lines(logs) == ["search-chain: exa=http_402 parallel=timeout firecrawl=http_500"]
+@pytest.mark.parametrize(
+    ("stages", "error", "line"),
+    [
+        (
+            {
+                "exa": status(402, {"tag": "NO_MORE_CREDITS"}),
+                "parallel": timeout,
+                "firecrawl": status(500, {"error": "boom"}),
+            },
+            "Exa: HTTP 402 NO_MORE_CREDITS; Parallel: timeout; Firecrawl: HTTP 500 boom",
+            "exa=http_402 parallel=timeout firecrawl=http_500",
+        ),
+        (
+            {"exa": status(500), "parallel": empty, "firecrawl": timeout},  # an empty reply among failures
+            "Exa: HTTP 500 nope; Parallel: no results; Firecrawl: timeout",
+            "exa=http_500 parallel=empty firecrawl=timeout",
+        ),
+    ],
+    ids=["failures", "failure-empty-failure"],
+)
+def test_all_stages_fail(env, logs, stages, error, line):
+    result = chain(Api(**stages)).search("q")
+    assert result == {"success": False, "error": f"search-chain: {error}"}
+    assert lines(logs) == [f"search-chain: {line}"]
 
 
 def test_no_results_anywhere_is_a_failure(env):
@@ -184,13 +207,6 @@ def test_no_results_anywhere_is_a_failure(env):
         "success": False,
         "error": "search-chain: Exa: no results; Parallel: no results; Firecrawl: no results",
     }
-
-
-def test_empty_and_failed_stages_are_a_failure(env):
-    api = Api(exa=status(500), parallel=empty, firecrawl=timeout)
-    result = chain(api).search("q")
-    assert result["success"] is False
-    assert result["error"] == "search-chain: Exa: HTTP 500 nope; Parallel: no results; Firecrawl: timeout"
 
 
 def test_no_keys_at_all(env, logs):
@@ -246,7 +262,7 @@ def test_pause_belongs_to_the_key(env):
 
 
 def test_key_that_cannot_be_encoded_fails_only_its_stage(env, logs):
-    """K5: a key with a lone surrogate (undecodable bytes in the environment) does not stop the chain."""
+    """A4, K4: a key with a lone surrogate (undecodable bytes in the environment) does not stop the chain."""
     env["EXA_API_KEY"] = "k\ud800y12345"
     api = Api(exa=status(402))
     assert served_by(chain(api).search("q")) == "P"

@@ -128,32 +128,33 @@ def test_exa_highlight_setting(chars, highlights):
 # --- A2 Parallel ----------------------------------------------------------------------------------
 
 
-def test_parallel_request_and_rows():
-    seen, handler = capture({"results": [{"url": "https://a.example/", "title": "A", "excerpts": ["x", "y"]}]})
-    out = call(engines.parallel, handler, "what is x", 10, "par-key")
-    assert seen["url"] == "https://api.parallel.ai/v1beta/search"
-    assert seen["headers"]["x-api-key"] == "par-key"
-    assert seen["headers"]["parallel-beta"] == "search-extract-2025-10-10"
-    assert seen["body"] == {
-        "search_queries": ["what is x"],
-        "objective": "what is x",
-        "mode": "agentic",
-        "max_results": 10,
-    }
-    assert out == {"rows": [{"url": "https://a.example/", "title": "A", "description": "x y", "position": 1}]}
-
-
-def test_parallel_v1_request_and_rows():
-    seen, handler = capture({"results": [{"url": "https://a.example/", "title": "A", "excerpts": ["x", "y"]}]})
-    out = call(engines.parallel, handler, "what is x", 10, "par-key", True)
-    assert seen["url"] == "https://api.parallel.ai/v1/search"
-    assert seen["headers"]["x-api-key"] == "par-key" and "parallel-beta" not in seen["headers"]
-    assert seen["body"] == {
+PARALLEL_BETA = (
+    (),
+    "https://api.parallel.ai/v1beta/search",
+    "search-extract-2025-10-10",
+    {"search_queries": ["what is x"], "objective": "what is x", "mode": "agentic", "max_results": 10},
+)
+PARALLEL_V1 = (
+    (True,),
+    "https://api.parallel.ai/v1/search",
+    None,
+    {
         "objective": "what is x",
         "search_queries": ["what is x"],
         "mode": "advanced",
         "advanced_settings": {"max_results": 10},
-    }
+    },
+)
+
+
+@pytest.mark.parametrize(("extra", "url", "beta_header", "body"), [PARALLEL_BETA, PARALLEL_V1], ids=["beta", "v1"])
+def test_parallel_request_and_rows(extra, url, beta_header, body):
+    seen, handler = capture({"results": [{"url": "https://a.example/", "title": "A", "excerpts": ["x", "y"]}]})
+    out = call(engines.parallel, handler, "what is x", 10, "par-key", *extra)
+    assert seen["url"] == url
+    assert seen["headers"]["x-api-key"] == "par-key"
+    assert seen["headers"].get("parallel-beta") == beta_header
+    assert seen["body"] == body
     assert out == {"rows": [{"url": "https://a.example/", "title": "A", "description": "x y", "position": 1}]}
 
 
@@ -348,7 +349,7 @@ def test_timeouts_are_passed_to_httpx():
 
 
 @pytest.mark.parametrize(("fn", "name"), ENGINES)
-@pytest.mark.parametrize(("query", "key"), [("q", "key-with​zero-width-space"), ("q\ud800", "k")])
+@pytest.mark.parametrize(("query", "key"), [("q", "key-with\u200bzero-width-space"), ("q\ud800", "k")])
 def test_request_that_cannot_be_built_is_no_malformed_reply(fn, name, query, key):
     """A4: nothing was sent, so this is no reply at all; the exception class names the cause."""
     sent = []

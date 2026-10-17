@@ -14,24 +14,7 @@ This plugin registers its own search provider that chains three services per cal
 
 The next stage is asked when a stage fails, returns no hits, has no key, or is paused after a quota or rate-limit reply (K5).
 
-**Why these three, in this order.** Full account with method, all results and data: [evaluation.md](evaluation.md). In short, the choice comes from a comparison of seven providers (Exa, Parallel, Firecrawl, TinyFish, Brave, Tavily, Keenable) on 2026-10-09 and 2026-10-10, without an LLM: 80 queries (official documentation, error messages, facts, current versions, German-language and niche topics), 75 of them scored on whether the first five results contain the expected source or answer.
-
-| | Correct, of 75 | Text per search (median) | Time per search (median) |
-|---|---|---|---|
-| Exa, highlights capped at 600 characters | 74 | 4,000 characters | 0.6 s |
-| Exa, as Hermes calls it | 73 | 12,000 characters | 2.0 s |
-| Parallel, as Hermes calls it (beta endpoint, `agentic`) | 72 | 8,200 characters | 2.9 s |
-| Parallel, `/v1/search`, `advanced` | 70 | 8,400 characters | 1.8 s |
-| Firecrawl, as Hermes calls it | 65 \* | 3,900 characters | 1.3 s |
-| TinyFish, Brave, Tavily, Keenable | 50 to 54 | | |
-
-\* Firecrawl's figure combines two runs: 49 of the 55 queries of the first run (2026-10-09) and 16 of the 20 harder queries added for the second run, a day later. In the second run it ran only on those 20, to save its small free allowance; it has no second mode to compare. Results shift by a few queries from one day to the next, so the 65 is less exact than the other figures. Its text and time are from those 20 queries.
-
-- The times of the capped Exa call and of `/v1/search` were measured as direct calls, the others through Hermes, so they are not comparable across rows. In the end-to-end test (T5), inside Hermes, a search took 1.8 s with Exa capped, 2.0 s with Exa uncapped, 3.0 s with Parallel's beta call and 3.3 s with `/v1/search` (medians).
-- Exa and Parallel are not distinguishable on this data: a difference of up to four queries is within the day-to-day variation of the providers (evaluation.md, Run 2).
-- Firecrawl is third, ahead of the other four. On the 20 harder queries added for the second run it got 16 (Exa 19, Parallel 18). On the other 55, in the first run, it got 49 from the result list (Exa 55, Parallel 52) and 53 with result pages (Exa 55, Parallel 53): its snippets are short, so the fix for an error message is often only on the page.
-- The other four are clearly behind on the same queries.
-- Exa comes first because the capped call returns about half the text of Parallel for the same hits and was faster inside Hermes. Being first, it is also the first to use up its free allowance, which is smaller than Parallel's; the chain then carries on with Parallel. Firecrawl comes last: from the result list it scored lowest of the three, and its free allowance is the smallest and shared with scraping, so the chain spares it.
+**Why these three, in this order:** D0; the full account is in [evaluation.md](evaluation.md).
 
 ## 2. Non-goals
 
@@ -133,12 +116,7 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
 
 ## 9. Tests and acceptance
 
-- **T1** Unit tests (pytest, `httpx.MockTransport`; nothing leaves the machine, and only the test of A5 opens a connection, to a closed local port):
-  - every branch of K2–K6, with missing keys and pauses, including all stages paused or without key; at most one request per stage (K7);
-  - pauses per status, their end (injected clock), and per key (K5);
-  - requests and row mapping of A1–A3 (both Parallel calls), the values of the settings of A1 and A2, the cap of A2; error texts on one line, codes and key masking (A4); the proxy variables (A5);
-  - result shape and key order, the URL rule, the text bounds and the empty query (S4); the bounds of `limit` (A6); no exception escapes (S5); interrupts (S6);
-  - `register(ctx)` and `plugin.yaml` (S1); properties and `is_available` (S2); keys absent from results and logs (S3); log lines (L1, L2).
+- **T1** Unit tests (pytest, `httpx.MockTransport`) for every rule of this document; nothing leaves the machine, and only the test of A5 opens a connection, to a closed local port. Test areas: [validation.md](validation.md).
 - **T2** Live check through Hermes' real `web_search` path, without an LLM, in a profile with the three keys:
   - a few queries served by Exa;
   - the same with the Exa key replaced by an invalid one in the process (HTTP 401): Parallel serves;
@@ -147,25 +125,17 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
   - the script refuses to run unless the profile selects `search-chain` and has `web.keyless_rescue: false`.
   - A used-up quota (HTTP 402) is not forced in the live check; it is observed in the log during use.
 - **T3** A review checks the result against this document.
-- **T4** `ruff check` and `ruff format --check` are clean; CI (GitHub Actions: ruff, pytest and `scripts/recompute.py` on Python 3.11 and 3.14) is green.
-- **T5** End-to-end test with a model (2026-10-10, Hermes Desktop 0.21.6, 36 questions, four setups, one run each): the model searches through Hermes' real tool path; the intended stage serves in every run; with an invalid Exa key Parallel serves, with invalid Exa and Parallel keys Firecrawl serves. Results: [validation.md](validation.md).
+- **T4** `ruff check` and `ruff format --check` are clean; CI (GitHub Actions: ruff and pytest on Python 3.11 and 3.14; pytest also runs `scripts/recompute.py`) is green.
+- **T5** End-to-end test with a model: the model searches through Hermes' real tool path; the intended stage serves in every run; with an invalid Exa key Parallel serves, with invalid Exa and Parallel keys Firecrawl serves. Setup and results: [validation.md](validation.md).
 
 ## 10. Known limitations
 
-- The chain reacts to quota replies; it does not know the remaining quota in advance.
-- Whether a provider answers HTTP 402 or bills a stored payment method when the free quota is used up depends on the account settings (auto recharge, budgets). For a hard cost cap, keep auto recharge off.
-- Parallel does not document its replies for a used-up quota. The chain moves on after any failure, so only the length of the pause depends on the status code.
-- After a restart the first call asks every stage again, including one with a used-up quota.
-- A renewed or topped-up quota is used only when the 24-hour pause ends or Hermes restarts.
-- A search that finds nothing at any stage is reported as a failure with `no results` (K6).
-- Results of different stages differ in length: Exa capped about 4,000 characters per search, Parallel about 8,200, Firecrawl about 3,900 (medians for 5 results). A description from Firecrawl is cut at 3,000 characters (D12).
-- Parallel reserves the beta endpoint for existing integrations and names no end date. If it is switched off, the Parallel stage fails with an HTTP error on every search and Firecrawl serves; the log line shows it (`parallel=http_...`), and `SEARCH_CHAIN_PARALLEL_API=v1` moves the stage to the GA endpoint.
-- Hermes caches successful results for `web.cache_ttl_minutes` (default 20).
+The user-facing list is in the [README](../README.md#limitations). The limits that are part of the design:
+
 - Every query is sent to Exa, and possibly to Parallel and Firecrawl (privacy).
-- Titles and descriptions are third-party content and reach the model as the providers send them, apart from the bounds of S4. Hermes marks web search results as untrusted data; the plugin does not filter them.
-- A model that asks for more than 20 results gets at most 20 (A6).
-- A search has no time limit as a whole (A0, D13).
-- Providers and their order are fixed.
+- Results are passed on as the providers send them, apart from the bounds of S4. Hermes marks web search results as untrusted data; the plugin does not filter them.
+- Hermes caches successful results for `web.cache_ttl_minutes` (default 20); this is why a search that finds nothing is a failure (K6).
+- Parallel reserves the beta endpoint for existing integrations and names no end date. If it is switched off, the Parallel stage fails with an HTTP error on every search and Firecrawl serves; the log line shows it (`parallel=http_...`), and `SEARCH_CHAIN_PARALLEL_API=v1` moves the stage to the GA endpoint.
 
 ## 11. Decisions
 
@@ -173,7 +143,7 @@ Every decision names its reason; where the reason is a measurement, the numbers 
 
 | ID | Decision | Reason |
 |---|---|---|
-| D0 | Exa, then Parallel, then Firecrawl; no other provider | The three scored best: Exa 73 and Parallel 72 of 75 scored queries in the second run, Firecrawl 65 over both runs (49 of 55 in the first, 16 of the 20 it ran in the second), the other four providers 50 to 54. All three almost always show the current version of a project in the snippet. Exa first: with the cap it returns about half the text of Parallel and was faster inside Hermes; being first, it is also the first to use up its free allowance, and the chain carries on with Parallel. Firecrawl last: from the result list it scored lowest of the three, and its free allowance is the smallest and shared with scraping, so the chain spares it. Details: evaluation.md, *Decision*. |
+| D0 | Exa, then Parallel, then Firecrawl; no other provider | The three scored best of seven providers: Exa 73 and Parallel 72 of 75 scored queries, Firecrawl 65 (two runs), the other four 50 to 54. Exa first (capped, about half the text of Parallel and faster inside Hermes); Firecrawl last (lowest of the three, smallest free allowance, shared with scraping). Details: evaluation.md, *Decision*. |
 | D1 | Direct REST calls, not Hermes' built-in providers | The built-in Exa, Parallel and Firecrawl providers need vendor SDKs that Hermes installs on first use; in a container built from the official image, such a runtime install was seen to remove optional packages the image had shipped with (Hermes 0.21.6). Direct calls give exact status codes for K5 and reach Exa's highlight cap, which the built-in provider does not expose. |
 | D2 | Parallel via the beta endpoint in mode `agentic`, as Hermes 0.21.6 calls it; `/v1/search` in mode `advanced` selectable by a setting | Measured twice against each other, the beta call was never worse: 72 against 70 of 75 queries in the comparison without a model, 36 against 34 of 36 questions in the end-to-end test with a model, at the same speed inside Hermes (3.0 against 3.3 s per search). Neither difference is statistically firm, but nothing measured favours `/v1/search`. Parallel's documentation reserves the beta endpoint for existing integrations, so the GA endpoint stays one setting away. Mode `fast` on `/v1/search` was clearly worse (49 of 75) and is not offered. |
 | D3 | Exa highlights capped at 600 characters, adjustable by one setting | No detectable loss in the comparison without a model (74 against 73 of 75) at one third of the text and the same price. The end-to-end test confirmed it with a model: 36 of 36 answers correct with and without the cap, 11 % fewer input tokens (validation.md, T5). The setting switches the cap off; the bound of S4 still holds. |
@@ -185,7 +155,7 @@ Every decision names its reason; where the reason is a measurement, the numbers 
 | D9 | MIT license | Hermes Agent is MIT-licensed; the same license keeps reuse simple. |
 | D10 | A chain, not a merge of several providers, and no model that picks results | An offline simulation on the comparison data showed no firm gain from merging (two queries won, one lost for the best cheap pair), and the ranking did not improve. Merging costs quota at every provider for every search. Details: evaluation.md, *Simulation*. |
 | D11 | No forced test of a used-up quota before release | It would mean exhausting or deliberately limiting a paid account. The chain moves on after any failure, the fallback was tested with invalid keys (HTTP 401), and the log line shows HTTP 402 when it happens (validation.md, *Not verified*). |
-| D12 | Bounds on what a row carries: title 300 characters, description 16,000, from Firecrawl 3,000 (S4) | The plugin exists to keep the context small, and a review put a 100,000-character title into a result with a mocked reply. The bounds follow the stored results of both comparison runs: no title was longer than 209 characters; a description had at most 600 characters from Exa with the cap, 2,967 from Parallel and 7,999 from Exa without the cap, so 16,000 only stops a faulty reply. Firecrawl's descriptions reached 13,863 characters; 26 of 400 (6.5 %) were longer than 3,000. Cutting them at 3,000 changed none of Firecrawl's 75 verdicts, nor did 2,000 or 1,000; at 300 two change (validation.md, T3). |
+| D12 | Bounds on what a row carries: title 300 characters, description 16,000, from Firecrawl 3,000 (S4) | The plugin exists to keep the context small, and a review put a 100,000-character title into a result with a mocked reply. The bounds follow the stored results of both comparison runs: no title was longer than 209 characters; a description had at most 600 characters from Exa with the cap, 2,967 from Parallel and 7,999 from Exa without the cap, so 16,000 only stops a faulty reply. Firecrawl's descriptions reached 13,863 characters; 26 of 400 (6.5 %) were longer than 3,000. Cutting them at 3,000 changed none of Firecrawl's 75 verdicts, nor did 5,000, 4,000, 2,000 or 1,000; at 300 two change. The check ran on the stored results, after the published verdicts of Firecrawl, Parallel and capped Exa had been reproduced from them (280 of 280). |
 | D13 | No time limit for a search as a whole (A0) | httpx bounds the phases of a request; a hard limit needs a streamed read or a second thread in the request path. Unlike page extraction, where Hermes discards every result of a call that takes too long, a slow search loses nothing. The worst case needs a provider that is slow in every phase or sends its reply in a trickle, and Hermes ends the tool call after 420 s. Proposed by all three reviews of v0.1.0. |
 | D14 | One client per call, none kept across calls (A5) | Measured: building a client takes about 9 ms, and httpx drops an idle connection after 5 s, so a kept client saves a TLS handshake only for searches within 5 s of each other. That is not worth a shared object with no place to close it. |
 | D15 | The pause table stays a plain dict: no lock, no pruning, no `Retry-After`; settings are read on every call | A call reads one entry and writes one; nothing iterates over the table, and it has at most one entry per stage and key. The chain moves on after a 429 anyway, so the exact length of that pause matters little (D4). A cached setting would carry over to another profile where one process serves several. |
