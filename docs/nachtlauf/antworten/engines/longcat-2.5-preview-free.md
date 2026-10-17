@@ -1,0 +1,11 @@
+1. **Security** — `engines.py:33-39` (Maskierung) vs. `engines.py:87-105` (`_rows` ohne Maskierung): Ein API-Key wird nur im Fehlerpfad maskiert; liefert ein Anbieter den Key in einer 2xx-Antwort zurück (z. B. in einem Ergebnisfeld), landet er unmaskiert in den Ergebniszeilen. Das widerspricht der S3-Intent an Zeile 25/35 („a reply that echoes the key must not carry it into the result“). Beispiel: Exa antwortet mit `{"results": [{"url": "https://a.example/?api_key=SECRET-KEY", "title": "echo"}]}` und Key `SECRET-KEY` — die Row enthält den Key im Klartext.
+
+2. **Edge Case** — `engines.py:118`: `if highlight_chars` ist auch für negative Wahrheitswert, sodass `exa(client, "q", 5, "k", -1)` den Body `{"maxCharacters": -1}` an Exa sendet. Nur 0 ist als Sonderfall (Exa-Default-Highlights) vorgesehen; negative Werte werden unvalidiert durchgereicht und vom API mit hoher Wahrscheinlichkeit abgelehnt.
+
+3. **Abweichung von Best Practices** — `engines.py:27, 119, 146` vs. `engines.py:127`: `MAX_RESULTS = 20` (dokumentiert als A6) wird nur bei Parallel erzwungen; Exa sendet `numResults: limit` und Firecrawl `limit: limit` ungekappt. Beispiel: `exa(client, "q", 100, "k")` erzeugt `numResults: 100`. Wenn die Kapselung nur Parallel betrifft, gehört das an den Konstantenkommentar; sonst ist die Anwendung inkonsistent.
+
+4. **Performance** — `engines.py:35-38`: `text.replace(key, "[key]")` läuft über den vollständigen Detail-Text, bevor auf `ERROR_SCAN` (2000 Zeichen) gekürzt wird. Bei einer mehr-MB-großen Fehler-Seite (z. B. 402 mit 5-MB-HTML-Body eines Proxys) scannt `replace` den gesamten Body, obwohl am Ende nur 200 Zeichen ausgegeben werden.
+
+5. **Abweichung von Best Practices** — `engines.py:76-77`: Transportfehler liefern nur den Exception-Typnamen, die eigentliche Nachricht geht verloren. Beispiel: `httpx.ConnectError("[Errno -2] Name or service not known")` erzeugt den Fehlertext `ConnectError` ohne Grund — im Log nicht diagnostizierbar. Offensichtlich gewollt (Test `test_engines.py:240` legt das fest), aber für Fehleranalyse wertlos.
+
+6. **Edge Case** — `engines.py:35-36`: `str.replace(key, "[key]")` kann Text verstümmeln, wenn der Key echte Teilzeichenkette eines längeren Tokens ist. Beispiel: Key `12345678`, Fehlertext `code 123456789 invalid` wird zu `code [key]9 invalid`.
