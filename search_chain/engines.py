@@ -6,7 +6,9 @@ else ``{"error": "<Provider>: <detail>", "code": "<short code>", "status": <HTTP
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
+from urllib.parse import quote
 
 import httpx
 
@@ -32,8 +34,9 @@ FIRECRAWL_TEXT_MAX = 3000  # A3, D12
 
 def _error(provider: str, detail: object, code: str, key: str, status: int | None = None) -> dict:
     text = str(detail)
-    if len(key) >= KEY_MIN:  # S3: a reply that echoes the key must not carry it into the result
-        text = text.replace(key, "[key]")
+    forms = {key, quote(key, safe="", errors="surrogatepass")} if len(key) >= KEY_MIN else ()
+    for form in forms:  # S3: a reply that echoes the key, as sent or percent-encoded and in any case
+        text = re.sub(re.escape(form), "[key]", text, flags=re.IGNORECASE)
     # A4: one line of printable characters, so a reply cannot add lines to the log
     text = " ".join("".join(c if c.isprintable() else " " for c in text[:ERROR_SCAN]).split())
     return {"error": f"{provider}: {text[:ERROR_MAX]}", "code": code, "status": status}

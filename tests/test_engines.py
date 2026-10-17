@@ -309,6 +309,13 @@ def test_only_a_value_of_8_characters_or_more_is_masked():
     assert out["error"] == "Exa: HTTP 401 bad key [key]"
 
 
+def test_key_is_masked_in_any_case_and_percent_encoded():
+    """S3: as in extract-chain."""
+    text = "keys EXA-SE/CRET+X and exa-SE%2FCRET%2Bx and exa-se%2fcret%2bx rejected"
+    out = call(engines.exa, reply({"error": text}, 401), "q", 5, "exa-SE/CRET+x")
+    assert out["error"] == "Exa: HTTP 401 keys [key] and [key] and [key] rejected"
+
+
 def test_key_is_masked_before_the_text_is_shortened(monkeypatch):
     """A4: masking sees the whole reply, so no part of a key is left where the cleaned-up text ends."""
     monkeypatch.setattr(engines, "ERROR_SCAN", 30)
