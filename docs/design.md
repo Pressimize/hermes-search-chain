@@ -48,7 +48,7 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
 ## 4. Interface to Hermes
 
 - **S1** The plugin directory contains `plugin.yaml` and `__init__.py`.
-  - `plugin.yaml` declares `name: search-chain`, `kind: backend`, `requires_hermes: ">=0.21"`, `provides_web_providers: [search-chain]` and `requires_env` with `EXA_API_KEY`, `PARALLEL_API_KEY` and `FIRECRAWL_API_KEY` (each `secret: true`).
+  - `plugin.yaml` declares `name: search-chain`, `kind: backend`, `requires_hermes: ">=0.21"`, `provides_web_providers: [search-chain]` and `requires_env` with `EXA_API_KEY`, `PARALLEL_API_KEY` and `FIRECRAWL_API_KEY` (each `secret: true`), and `optional_env` with the two settings of A1 and A2. Hermes 0.21.6 reads `optional_env` only for messaging plugins; for this plugin the entry only documents the settings, which work from the profile's `.env` either way.
   - `register(ctx)` calls `ctx.register_web_search_provider(...)` once.
 - **S2** The provider subclasses `agent.web_search_provider.WebSearchProvider`. Its `name` is `search-chain`; `supports_search()` returns True and `supports_extract()` False. `is_available()` is true iff at least one of the three keys is set, and checks without network access.
 - **S3** Keys and the settings (A1, A2) are read only via `agent.web_search_provider.get_provider_env(...)`, so per-profile `.env` files work.
@@ -98,9 +98,10 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
 - **A3** Firecrawl:
   - `POST https://api.firecrawl.dev/v2/search` with `Authorization: Bearer <key>`; body `{"query", "limit": <limit, at most 20>}`.
   - Success means a 2xx status and `success: true`. Rows from `data.web[]`: `url`, `title`, `description`, the latter cut at 3,000 characters (D12).
+  - A 2xx reply with `success: false` and a reason (found as in A4) becomes `Firecrawl: <reason>` with code `rejected`. It starts no pause, because K5 goes by the HTTP status. Without a reason it is a malformed reply.
 - **A4** Errors:
   - A non-2xx status becomes `<Provider>: HTTP <status> <detail>`. The detail is the first of these that is present in the JSON body: `tag` (Exa, e.g. `NO_MORE_CREDITS`), `error`, `message` (a dict value contributes its `message`); otherwise the response text. A body that cannot be parsed counts as no JSON; the status still decides about a pause (K5).
-  - A transport error becomes `<Provider>: timeout` or `<Provider>: <exception class>`; a 2xx reply that is not the expected JSON becomes `<Provider>: malformed reply`. A request that httpx cannot build, such as one with a key or query it cannot encode, sends nothing and also becomes `<Provider>: <exception class>` (e.g. `UnicodeEncodeError`), not `malformed reply`. A reply that httpx cannot decode, such as a broken compressed body, is a transport error whatever its status.
+  - A transport error becomes `<Provider>: timeout` or `<Provider>: <exception class>`; a 2xx reply that is not the expected JSON becomes `<Provider>: malformed reply`. A 2xx reply without a result list (`results`, or Firecrawl's `data.web`) is a valid reply without hits (`no results`). A request that httpx cannot build, such as one with a key or query it cannot encode, sends nothing and also becomes `<Provider>: <exception class>` (e.g. `UnicodeEncodeError`), not `malformed reply`. A reply that httpx cannot decode, such as a broken compressed body, is a transport error whatever its status.
   - Error texts are one line: line breaks and other control characters become spaces, and runs of spaces become one space, so a reply cannot add lines to the log. Only the first 2,000 characters of a reply are looked at, and the text is cut to 200 characters after the provider name.
   - A key echoed in an error text is replaced by `[key]` if it has 8 or more characters (S3). Other spellings of the key, such as a URL-encoded one, are not recognised.
   - Each outcome has a short code for the log (L1).
@@ -123,7 +124,7 @@ The next stage is asked when a stage fails, returns no hits, has no key, or is p
 ## 8. Logging
 
 - **L1** Logger `logging.getLogger(__name__)`. For each call, one INFO line: `search-chain: exa=<outcome> [parallel=<outcome>] [firecrawl=<outcome>]`.
-  - Outcomes: `ok`, `empty`, `no_key`, `paused`, `interrupted`, `http_<status>`, `timeout`, `malformed`, or an exception class name.
+  - Outcomes: `ok`, `empty`, `no_key`, `paused`, `interrupted`, `http_<status>`, `timeout`, `malformed`, `rejected` (A3), or an exception class name.
   - Each stage up to the one that ended the chain is listed. No query text, no keys.
   - If the call fails before the first stage (S5), the line is `search-chain: no stage ran`, after a WARNING `search-chain: call failed: <exception class>`.
   - A call with an empty query (S4) has the line `search-chain: empty_query` and no WARNING.

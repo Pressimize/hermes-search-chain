@@ -3,6 +3,9 @@
 ## Unreleased
 
 - A request that cannot be built, e.g. because the key contains an invisible Unicode character, fails its stage as `<Provider>: UnicodeEncodeError`. Before, it was reported as `malformed reply`, although nothing had been sent.
+- A Firecrawl reply with a 2xx status and `success: false` keeps its reason: `Firecrawl: <reason>` (log code `rejected`) instead of `Firecrawl: malformed reply`.
+- `plugin.yaml` lists the two settings `SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS` and `SEARCH_CHAIN_PARALLEL_API` as `optional_env`.
+- Developer script: `scripts/live_check.py` shows the log line of a call that ran no stage instead of reporting it as served from Hermes' cache.
 
 ## 0.1.1 – 2026-10-11
 

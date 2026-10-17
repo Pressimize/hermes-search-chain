@@ -189,6 +189,20 @@ def test_firecrawl_unexpected_reply(body):
     assert out == {"error": "Firecrawl: malformed reply", "code": "malformed", "status": None}
 
 
+@pytest.mark.parametrize(
+    ("body", "detail"),
+    [
+        ({"success": False, "error": "Payment Required: no credits"}, "Payment Required: no credits"),
+        ({"success": False, "error": {"message": "Rate limit"}}, "Rate limit"),
+        ({"success": False, "error": "bad key fc-secret-123"}, "bad key [key]"),
+    ],
+)
+def test_firecrawl_2xx_failure_keeps_its_reason(body, detail):
+    """A3: success false with a reason names it; a 2xx status starts no pause (K5)."""
+    out = call(engines.firecrawl, reply(body), "q", 5, "fc-secret-123")
+    assert out == {"error": f"Firecrawl: {detail}", "code": "rejected", "status": None}
+
+
 # --- A4 errors ------------------------------------------------------------------------------------
 
 

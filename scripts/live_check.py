@@ -99,7 +99,8 @@ def main():
         except ValueError:
             data = {}
         rows = (data.get("data") or {}).get("web") or []
-        info = [line for line in collect.lines if "=" in line and "paused for" not in line]
+        # the plugin's INFO line (L1); the WARNING lines of S5 and L2 are left out
+        info = [line for line in collect.lines if "paused for" not in line and "call failed" not in line]
         steps = info[-1].split(": ", 1)[1] if info else "(no log line: served from Hermes' cache?)"
         for stage in KEYS:
             if f"{stage}=" in steps and not any(f"{stage}={skip}" in steps for skip in ("no_key", "paused")):
