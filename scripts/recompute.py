@@ -63,7 +63,10 @@ def main():
         extra = sum(scores(run2, c["column"], "correct_from_result_list", {"run2-extra"}).values())
         mine = [r for r in run2 if r["column"] == c["column"]]
         seconds, chars = median(r["seconds"] for r in mine), median(r["chars"] for r in mine if r["run"] == "run2-main")
-        print(f"  {c['column']:28s} {main_set:3d} {extra:3d} {main_set + extra:3d}  {seconds} s  {chars} chars")
+        basis = ""
+        if chars is None:  # Firecrawl ran only on the extra block; evaluation.md gives its characters from there
+            chars, basis = median(r["chars"] for r in mine if r["run"] == "run2-extra"), " (extra block)"
+        print(f"  {c['column']:28s} {main_set:3d} {extra:3d} {main_set + extra:3d}  {seconds} s  {chars} chars{basis}")
 
     print("\nRun 2: variants against their baseline (only variant : only baseline, p)")
     for c in columns:
