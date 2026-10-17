@@ -32,6 +32,8 @@ flock -n 9 || { echo "Ein anderer second-opinion-Lauf ist aktiv (.opinion.lock).
 PROMPT="$(cat "$PROMPT_FILE")"
 STAGE="$(mktemp -d)" && [ -d "$STAGE" ] || { echo "mktemp -d fehlgeschlagen" >&2; exit 1; }
 trap 'rm -rf "$STAGE"' EXIT
+# Die Modellordner liegen unter STAGE und muessen ausserhalb des Repos sein, sonst greift die Sperre nicht (TMPDIR pruefen).
+case "$(cd "$STAGE" && pwd -P)/" in "$(cd "$ROOT" && pwd -P)"/*) echo "Temp-Ordner liegt im Repo: $STAGE (TMPDIR aendern)" >&2; exit 1 ;; esac
 NAMES=()
 for f in "$@"; do
   [ -f "$f" ] || { echo "Anhang fehlt: $f" >&2; exit 1; }
@@ -55,12 +57,11 @@ done
 rm -rf "$WORK"   # Reste frueherer Laeufe nicht mit neuen verwechseln
 mkdir -p "$WORK"
 grep -qx '.opinion/' "$ROOT/.git/info/exclude" 2>/dev/null || echo '.opinion/' >> "$ROOT/.git/info/exclude"
-# Anhaenge muessen im Arbeitsordner liegen, sonst lehnt opencode den Lesezugriff ab.
 ATTACH=()
-for b in ${NAMES[@]+"${NAMES[@]}"}; do
-  cp "$STAGE/$b" "$WORK/$b" || { echo "Anhang nicht kopierbar: $b" >&2; exit 1; }
-  ATTACH+=(-f "$b")
-done
+for b in ${NAMES[@]+"${NAMES[@]}"}; do ATTACH+=(-f "$b"); done
+# Jedes Modell arbeitet in einem eigenen leeren Ordner ausserhalb des Repos, der nur die Anhaenge enthaelt.
+# Ohne Shell und ohne Zugriff ausserhalb dieses Ordners sieht es weder das Repo noch die Antworten anderer Modelle.
+ISOLATE='{"permission":{"bash":"deny","edit":"deny","webfetch":"deny","websearch":"deny","task":"deny","external_directory":"deny"}}'
 
 EINDRUECKE="$ROOT/docs/modell-eindruecke.md"
 FEHLVERSUCHE="$ROOT/docs/modell-fehlversuche.md"   # schreibt das Skript selbst, mitcommitten
@@ -78,12 +79,15 @@ Vom Skript geschrieben, zaehlt fuer die Rotation mit.
 }
 
 ask() {  # ask <modell> -> 0 bei Antwort
-  local m="$1" out log start pid rc dur g
+  local m="$1" out log iso start pid rc dur g
   TRIED+=("$m")
   out="$WORK/$m.md"; log="$WORK/$m.log"
+  iso="$STAGE/run-$m"
+  mkdir "$iso" || { echo "[$m] Ordner nicht anlegbar: $iso" >&2; return 1; }
+  for b in ${NAMES[@]+"${NAMES[@]}"}; do cp "$STAGE/$b" "$iso/$b" || { echo "[$m] Anhang nicht kopierbar: $b" >&2; return 1; }; done
   start=$(date +%s)
   # Prompt vor -f, sonst liest opencode ihn als Dateinamen.
-  ( cd "$WORK" && exec timeout "$TIMEOUT" opencode run -m "opencode/$m" "$PROMPT" ${ATTACH[@]+"${ATTACH[@]}"} \
+  ( cd "$iso" && export OPENCODE_CONFIG_CONTENT="$ISOLATE" && exec timeout "$TIMEOUT" opencode run -m "opencode/$m" "$PROMPT" ${ATTACH[@]+"${ATTACH[@]}"} \
       --print-logs --log-level INFO >"$out" 2>"$log" ) &
   pid=$!
   # Bei Rate-Limit haengt der Client still; Log beobachten und frueh abbrechen.
