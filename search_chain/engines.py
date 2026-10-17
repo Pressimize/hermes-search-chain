@@ -74,7 +74,7 @@ def _post(
     try:
         try:
             response = client.post(url, json=body, headers=headers, timeout=timeout)
-        except ValueError as exc:  # e.g. a key or query httpx cannot encode: nothing was sent, so no reply (A4)
+        except ValueError as exc:  # e.g. a key or query httpx cannot encode: no reply was read (A4)
             return None, _error(provider, type(exc).__name__, type(exc).__name__, key)
         if not 200 <= response.status_code < 300:
             status = response.status_code
@@ -158,8 +158,10 @@ def firecrawl(client: httpx.Client, query: str, limit: int, key: str) -> dict:
     data, error = _post(client, "Firecrawl", FIRECRAWL_URL, key, FIRECRAWL_TIMEOUT, headers, body)
     if error:
         return error
-    if data.get("success") is False and (reason := _reason(data)):  # A3: a 2xx reply that reports a failure
-        return _error("Firecrawl", reason, "rejected", key)
+    if data.get("success") is False:  # A3: a 2xx reply that reports a failure keeps its reason, if it has one
+        rejected = _error("Firecrawl", _reason(data), "rejected", key)
+        if rejected["error"] != "Firecrawl: ":
+            return rejected
     payload = data.get("data")
     if data.get("success") is not True or not isinstance(payload, dict):
         return _malformed("Firecrawl", key)

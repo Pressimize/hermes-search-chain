@@ -191,7 +191,10 @@ def test_firecrawl_without_web_results_is_empty():
     assert call(engines.firecrawl, reply({"success": True, "data": {"news": []}}), "q", 5, "k") == {"rows": []}
 
 
-@pytest.mark.parametrize("body", [{"success": False, "data": {"web": []}}, {"success": True, "data": []}, {}])
+@pytest.mark.parametrize(
+    "body",
+    [{"success": False, "data": {"web": []}}, {"success": False, "error": " \n "}, {"success": True, "data": []}, {}],
+)
 def test_firecrawl_unexpected_reply(body):
     out = call(engines.firecrawl, reply(body), "q", 5, "k")
     assert out == {"error": "Firecrawl: malformed reply", "code": "malformed", "status": None}
