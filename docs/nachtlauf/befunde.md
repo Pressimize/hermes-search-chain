@@ -120,6 +120,14 @@ SB (scr #9, #10), DS (scr #2, #3, #4, #6, #7), GLM (scr #4, #5), BF (scr #2, #3,
 SB (scr #4), BF (scr #9, #10), DS (scr #8), GLM (scr #6).
 **Abgelehnt.** T4 verlangt nur, dass `recompute.py` in CI läuft; ein Vergleich gegen eine gespeicherte Ausgabe wäre ein neues Verfahren (S-01 hätte er gefunden, daher als Idee in der Zusammenfassung). Doppelte Läufe kosten nur CI-Zeit. Der Pin auf `httpx==0.28.1` ist bewusst die Version von Hermes v0.21.6 (Kommentar in `pyproject.toml`).
 
+### X. Big Pickle, Nachholrunde provider: Rundung der Restzeit, Grenzfall am Pausenende, `surrogatepass`, Log-Detail, Einstellungen mit Leerzeichen
+BP (prov #1–#4, #8–#10).
+**Abgelehnt: sachlich falsch oder so spezifiziert.** #1 rechnet die Restzeit falsch nach (nach 81.001 s bleiben 5.399 s, nicht 6.399 s; `_left` ergibt „1 h“, wie der Test erwartet). #8/#9 übersehen, dass `get_provider_env` trimmt (siehe B); die Tests mit `" 1200 "` und `" V1 "` laufen grün. #10 widerlegt sich in der Antwort selbst. Pausenende bei `left == 0` ist getestet (`test_pause_after_quota_and_rate_limit`). `surrogatepass` hält gerade einen solchen Key vom Abbruch der Kette ab (`test_key_that_cannot_be_encoded_fails_only_its_stage`). Das Log-Detail ohne Providernamen ist das Format von L2.
+
+## Hinweis zur Unabhängigkeit der Antworten
+
+Die Modelle laufen im `opencode`-Agentenmodus mit Shell- und Lesezugriff. Sie lesen nicht nur die Anhänge, sondern durchsuchen das Repository: Big Pickle zitiert in der Spec-Nachholrunde „Space-Bunnys Befund“ aus `docs/nachtlauf/antworten/`, GLM verglich die Anhänge mit dem Arbeitsstand („die angehängten Dateien sind älter als der Repo-Stand“) und versuchte, Dateien außerhalb des Repos zu lesen; Beams Antworten zu provider und scripts gleichen in Wortlaut und Beispielen denen von Space Bunny, DeepSeek und GLM, die vorher im selben Ordner lagen. Unabhängig voneinander und vor dem Fix gefunden wurde E-01 nur von Claude, Space Bunny (provider) und DeepSeek (spec). Mehrfachnennungen sind daher kein Maß für Gewicht.
+
 ## Unklar
 
 Keine. Wo ein Befund nicht eindeutig war, wurde er am Hermes-Quellcode oder mit einem Skript entschieden.
