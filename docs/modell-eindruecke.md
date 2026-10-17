@@ -36,3 +36,24 @@ Eine Zeile je Modell und Review. Spalten: Modell-ID (exakt, ohne `opencode/`), D
 | space-bunny-free | 2026-10-17 | review/nachtlauf-2026-10-17 (Isolation im Skript) | 70s | 10/1/2 | Erster Lauf mit Isolation, sah nur den Diff. Treffer: Temp-Ordner könnte bei passendem TMPDIR im Repo liegen (übernommen). Fehlalarme: Ordnerkollision zwischen Läufen und fehlendes Aufräumen (STAGE ist je Lauf neu und wird per trap gelöscht). |
 | deepseek-v4.1-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (Isolation im Skript) | 70s | 10/1/2 | Gleicher Treffer (Lage von STAGE). Fehlalarme: Ordnerkollision, angeblich ungequotete Expansion. Zweifel an OPENCODE_CONFIG_CONTENT durch Probelauf widerlegt. |
 | mimo-v2.6-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (Isolation im Skript) | 120s | 10/0/2 | Diesmal ohne Timeout. Kein Treffer; Fehlalarme: Ordnerkollision, „read nicht gesperrt“ (external_directory greift auch für read, im Probelauf belegt). |
+| space-bunny-free | 2026-10-17 | review/nachtlauf-2026-10-17 (engines, isoliert) | 126s | 10/1/0 | Gründlich, ohne Shell aber kein bestätigter Fehler; nennt V-01 (Firecrawl `success: false`) mit Pausen-Aspekt. |
+| glm-5.3-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (engines, isoliert) | 185s | 7/0/0 | Sachlich, nur bekannte bewusste Entscheidungen (Retry-After, Phasen-Timeout). |
+| mimo-v2.6-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (engines, isoliert) | 545s | 8/2/0 | Isoliert viel besser als nachts: V-01 und V-05 unabhängig gefunden. |
+| big-pickle | 2026-10-17 | review/nachtlauf-2026-10-17 (engines, isoliert) | 435s | 9/0/0 | Ohne fremde Antworten nur bekannte Punkte; Länge der Fehlertexte falsch als Bug gelesen (A4 legt sie so fest). |
+| beam-free | 2026-10-17 | review/nachtlauf-2026-10-17 (engines, isoliert) | 45s | 8/0/0 | Schnell, oberflächlich, keine Treffer. |
+| deepseek-v4.1-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (engines, isoliert, nach Rate-Limit) | 110s | 9/0/1 | Hält die Dateiablage der Anhänge für einen Importfehler; sonst bekannte Punkte. |
+| space-bunny-free | 2026-10-17 | review/nachtlauf-2026-10-17 (provider, isoliert) | 110s | 10/1/0 | Findet V-04 (Einstellungen fehlen im Manifest); kann E-01 ohne engines.py und Shell nicht belegen. |
+| deepseek-v4.1-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (provider, isoliert) | 75s | 9/0/0 | Knapp, nur bekannte Punkte. |
+| glm-5.3-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (provider, isoliert) | 325s | 8/1/1 | V-04 gefunden, aber mit falscher Begründung (Einstellungen seien im Scope wirkungslos). |
+| big-pickle | 2026-10-17 | review/nachtlauf-2026-10-17 (provider, isoliert) | 460s | 6/0/0 | Bekannte Punkte, Thread-Sicherheit schon in K5 beschrieben. |
+| beam-free | 2026-10-17 | review/nachtlauf-2026-10-17 (provider, isoliert) | 35s | 7/0/0 | Kurz, keine Treffer. |
+| mimo-v2.6-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (provider, isoliert, nach Rate-Limit) | 270s | 10/0/0 | Ordentlich, nur bekannte bewusste Entscheidungen. |
+| deepseek-v4.1-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (scripts, isoliert) | 70s | 10/0/0 | Bemerkt `None chars` ohne Ausführen nicht. |
+| glm-5.3-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (scripts, isoliert) | 461s | 9/0/0 | Nennt wieder nur die unterschiedliche Basis der Mediane (Teil von S-01). |
+| mimo-v2.6-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (scripts, isoliert) | 305s | 10/0/0 | Gründlich, aber nur Robustheit bei veränderten Daten. |
+| longcat-2.5-preview-free | 2026-10-17 | review/nachtlauf-2026-10-17 (scripts, isoliert) | 140s | 10/0/1 | Einzige brauchbare Longcat-Antwort; `IndexError` beim Zerlegen der Logzeile kann nicht auftreten. |
+| big-pickle | 2026-10-17 | review/nachtlauf-2026-10-17 (scripts, isoliert) | 581s | 10/0/1 | Erfindet ein Logformat („paused for“ in der INFO-Zeile). |
+| beam-free | 2026-10-17 | review/nachtlauf-2026-10-17 (scripts, isoliert) | 35s | 10/0/1 | Behauptet fehlendes `uv.lock` (liegt im Repo, nur nicht im Anhang). |
+| space-bunny-free | 2026-10-17 | review/nachtlauf-2026-10-17 (spec, isoliert) | 260s | 7/2/0 | V-01 und V-05; Zeilenlänge vorsichtig als „falls nicht anders konfiguriert“ formuliert. |
+| deepseek-v4.1-flash-free | 2026-10-17 | review/nachtlauf-2026-10-17 (spec, isoliert) | 351s | 6/1/0 | V-01 unabhängig; E-01 diesmal nicht (nachts nur durch Ausführen gefunden). |
+| beam-free | 2026-10-17 | review/nachtlauf-2026-10-17 (spec, isoliert) | 85s | 10/0/1 | Rundung der Restzeit fälschlich als Abweichung gewertet. |

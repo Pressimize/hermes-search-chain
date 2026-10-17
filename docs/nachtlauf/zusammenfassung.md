@@ -66,6 +66,15 @@ Gegenüber Andres Rangfolge fallen zwei Abweichungen deutlich aus: Muse Spark un
 
 `opencode run` arbeitet als Agent mit Shell- und Lesezugriff. Die Modelle beschränken sich nicht auf die Anhänge: Sie lesen frühere Antworten in `.opinion/` (das Rotationsmodell läuft zuletzt im selben Ordner) und die gesicherten Antworten unter `docs/nachtlauf/antworten/`. GLM verglich die Anhänge mit dem aktuellen Repo-Stand und versuchte, Dateien außerhalb des Repos zu lesen. Für die Nachholrunden wurden die gesicherten Antworten deshalb vorübergehend aus dem Repo verschoben. Echt unabhängig wurde E-01 von Claude, Space Bunny und DeepSeek gefunden. Vorschlag für das Skript, von Andre zu entscheiden: jedes Modell in einem eigenen, leeren Ordner außerhalb des Repos laufen lassen und Shell und Lesen außerhalb dieses Ordners verbieten (opencode-Berechtigungen).
 
+## Nachtrag: isolierte Nachholrunde (Vormittag 2026-10-17)
+
+Auf Andres Wunsch wurden alle Fälle nachgeholt, in denen ein Modell fremde Antworten gesehen haben konnte, und alle ausgefallenen. Vorher wurde das Skript geändert: Jedes Modell arbeitet jetzt in einem eigenen leeren Ordner außerhalb des Repos, ohne Shell und ohne Zugriff nach außen. Ergebnis in `isoliert.md`, kurz:
+
+- 35 Aufrufe, 21 Antworten; MiMo lief diesmal fast ohne Timeouts, Space Bunny wurde ab 09:24 UTC von OpenCodes Free-Tier gesperrt.
+- **Ohne Shell fand kein Modell die beiden echten Fehler (E-01, S-01).** In der Nacht hatten die Modelle sie durch Ausführen des Codes gefunden. Die Antworten sind jetzt unabhängig, aber flacher.
+- V-01 (Firecrawl `success: false`) nennen jetzt vier Antworten unabhängig. Neu als Vorschlag: V-04 (Einstellungen ins Manifest als `optional_env`) und V-05 (A4 präzisieren). Beide brauchen Andres Entscheidung.
+- Beams Treffer der Nacht sind ohne Vorlage verschwunden. Das bestätigt, dass sie abgeschrieben waren.
+
 ## Abweichungen vom Auftrag
 
 - Der Hintergrundlauf der ersten Runde wurde nach 2 Stunden beim letzten Modell des Bereichs `spec` abgebrochen. Die bis dahin vorliegenden Antworten wurden gesichert, die fehlenden Modelle nachgeholt.

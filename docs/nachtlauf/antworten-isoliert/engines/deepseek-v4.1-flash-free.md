@@ -1,0 +1,17 @@
+1. **test_engines.py:6** – *Potentieller Bug (Setup)*: Der Test importiert `from search_chain import engines`, die angehängte Datei liegt aber als `engines.py` im Wurzelverzeichnis und es existiert kein Paket `search_chain/` (kein `__init__.py`, keine `conftest.py`). `pytest test_engines.py` scheitert daher schon mit `ModuleNotFoundError: No module named 'search_chain'`. Sollte der Verzeichnisbaum im echten Repo anders sein, ist der Befund nur ein Artefakt der angehängten Dateien.
+
+2. **engines.py:35-36** – *Security*: `_error` maskiert den Key nur, wenn `len(key) >= KEY_MIN` (8). Ein kürzerer Key wird nie ersetzt und landet damit im Fehlertext und im Log. Beispiel: `exa(..., key="secret7")` mit Antwort `401 {"error": "bad key secret7"}` liefert `"Exa: HTTP 401 bad key secret7"` – der Key steht ungeschützt im Ergebnis. Zudem ist die Maskierung ein exakter `str.replace`; sobald der Anbieter den Key nur teilweise oder anders zitiert/encodiert zurückspiegelt, wird er nicht erkannt.
+
+3. **engines.py:46-59** – *Performance/Robustheit*: `_detail` liest und parst den vollständigen Fehler-Body (`response.json()` bzw. `response.text.strip()`), bevor `_error` überhaupt auf `ERROR_SCAN`/`ERROR_MAX` kürzt. Eine fehlerhafte oder bösartige Antwort (z. B. 50 MB HTML bei HTTP 500) wird also komplett dekodiert, geparst und per `str(detail)` nochmals kopiert, obwohl am Ende nur 200 Zeichen gebraucht werden. Die Kürzung greift zu spät, um Ressourcenverbrauch zu begrenzen.
+
+4. **engines.py:76** – *Abweichung von Best Practices*: `except Exception as exc` fängt pauschal alles im `try`-Block und meldet jeden Fehler als Transportfehler mit nur dem Klassennamen (`type(exc).__name__`) als Detail, z. B. `{"error": "Exa: SomeError", "code": "SomeError"}`. Damit werden auch Programmierfehler (etwa `TypeError` aus `client.post`) als Providerfehler getarnt, statt sichtbar zu bleiben. Ein gezielteres Fangen von `httpx.HTTPError` wäre robuster.
+
+5. **engines.py:119, 127, 146** – *Edge Case/Inkonsistenz*: `limit` wird nur in `parallel` gekappt (`min(limit, MAX_RESULTS)`), in `exa` (`"numResults": limit`) und `firecrawl` (`"limit": limit`) ungeprüft weitergereicht. `exa(..., limit=0)` sendet `numResults: 0`, `exa(..., limit=-1)` sendet `-1`; auch eine Obergrenze von 20 (A6) fehlt dort, sodass sich die drei Stufen unterschiedlich verhalten.
+
+6. **engines.py:118** – *Edge Case*: `if highlight_chars` nutzt Truthiness statt eines Wertebereichs. Ein negativer Wert wird als `{"maxCharacters": -5}` an Exa geschickt, und `None` fällt stillschweigend auf `True` (Default-Highlights) zurück, obwohl der Parameter explizit übergeben wurde.
+
+7. **engines.py:151** – *Edge Case*: Die Prüfung `data.get("success") is not True` verwirft jede nicht-boolesche Wahrheit, z. B. antwortet Firecrawl mit `{"success": 1, "data": {"web": [...]}}`, wird das als `{"error": "Firecrawl: malformed reply", ...}` gewertet, obwohl die Daten gültig sind.
+
+8. **test_engines.py:317** – *Abweichung von Best Practices*: Der Test liest `request.extensions["timeout"]`, eine httpx-interne Struktur, die nicht Teil der öffentlichen API ist. Änderungen daran zwischen httpx-Versionen brechen den Test unabhängig vom getesteten Verhalten.
+
+9. **test_engines.py:303** – *Abweichung von Best Practices (flaky)*: `test_reply_the_parser_gives_up_on` verlässt sich darauf, dass `json.loads` bei `"[" * 200_000` einen `RecursionError` wirft. Das hängt vom C-Beschleuniger, dem `sys.setrecursionlimit` und der Python-Build ab und ist nicht garantiert stabil.
