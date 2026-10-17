@@ -29,24 +29,9 @@ The model gets the same result format as from any Hermes search provider. It is 
 
 ## Why these three
 
-They come from a comparison of seven search providers on 80 queries without an LLM (official documentation, error messages, facts, current versions, German-language and niche topics; 75 scored on whether the first five results contain the expected source or answer):
+In a comparison of seven search providers on 80 queries without an LLM (75 scored on whether the first five results contain the expected source or answer), Exa found 73, Parallel 72 and Firecrawl 65; the other four found 50 to 54. Exa and Parallel cannot be told apart on this data. Exa comes first because, with its highlights capped, it returns about half the text of Parallel and was faster inside Hermes, and it is the first to use up its smaller free allowance, after which the chain carries on with Parallel. Firecrawl comes last: it scored lowest of the three, and its small free allowance is shared with scraping.
 
-| | Correct, of 75 | Text per search (median) | Time per search (median) |
-|---|---|---|---|
-| Exa, highlights capped at 600 characters | 74 | 4,000 characters | 0.6 s |
-| Exa, as Hermes calls it | 73 | 12,000 characters | 2.0 s |
-| Parallel, as Hermes calls it | 72 | 8,200 characters | 2.9 s |
-| Parallel, `/v1/search`, mode `advanced` | 70 | 8,400 characters | 1.8 s |
-| Firecrawl, as Hermes calls it | 65 \* | 3,900 characters | 1.3 s |
-| TinyFish, Brave, Tavily, Keenable | 50 to 54 | | |
-
-\* Firecrawl's figure combines two runs: 49 of the 55 queries of the first run (2026-10-09) and 16 of the 20 harder queries added for the second run, a day later. In the second run it ran only on those 20, to save its small free allowance; it has no second mode to compare. Results shift by a few queries from one day to the next, so the 65 is less exact than the other figures. Its text and time are from those 20 queries.
-
-The times of the capped Exa call and of `/v1/search` were measured as direct calls, the others through Hermes, so they are not comparable across rows; inside Hermes both Parallel calls took about 3 s and Exa about 2 s (see *Validation*).
-
-Exa and Parallel are not distinguishable on this data; a difference of a few queries is within the day-to-day variation of the providers. Firecrawl is third, ahead of the other four. On the 20 harder queries it got 16 (Exa 19, Parallel 18). On the 55 queries of the first run it got 49 when only the result list counts (Exa 55, Parallel 52), and 53 when an answer found only on a result page counts as well (Exa 55, Parallel 53): its snippets are short, so the fix for an error message is often only on the page. Exa comes first because the capped call returns about half the text of Parallel for the same hits and was faster inside Hermes (1.8 s against 3.0 s per search in the end-to-end test). Being first, it is also the first to use up its free allowance, which is smaller than Parallel's; the chain then carries on with Parallel. Firecrawl comes last: from the result list it scored lowest of the three, and its free allowance is the smallest and shared with scraping, so the chain spares it.
-
-The full comparison, with all seven providers, the tested modes, a simulation of merging providers, costs and the reasons for each choice, is in [docs/evaluation.md](docs/evaluation.md). Every query and per-query result is in [`data/`](data).
+Method, tables and the reasons for each choice: [docs/evaluation.md](docs/evaluation.md). Every query and per-query result is in [`data/`](data).
 
 ## Requirements
 
@@ -125,27 +110,15 @@ SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS=600   # default; 0 = Exa's own highlight length
 SEARCH_CHAIN_PARALLEL_API=beta         # default: the call Hermes makes; v1 = /v1/search in mode advanced
 ```
 
-Exa returns excerpts ("highlights") per result. Capped at 600 characters, a search of five results is about 4,000 characters instead of 12,000, with no detectable loss of hits in the comparison. In the end-to-end test (see *Validation*) the model answered all 36 questions correctly with and without the cap; the cap saved a third of the input tokens on error-message questions, where Exa's own highlights are long, and nothing on version questions. Set `0` to switch the cap off.
+Exa returns excerpts ("highlights") per result. Capped at 600 characters, a search of five results is about 4,000 characters instead of 12,000, with no loss of hits or answers in the tests (design D3). Set `0` to switch the cap off.
 
 Parallel is called on its beta endpoint in mode `agentic`, exactly as Hermes' built-in provider does. `v1` moves the stage to the GA endpoint `/v1/search` in mode `advanced`; see the FAQ.
 
 ## Validation
 
-- **Unit tests** without network for every rule of the chain, the provider calls and the settings.
-- **End-to-end with a model** (2026-10-10, Hermes Desktop 0.21.6; the model was GLM 5.3, served through Mistral's API): 36 questions in German (10 facts, 10 error messages, 16 "latest version of X"), each asked once in four setups through Hermes' real tool path, 144 runs. No run failed, and the intended stage served every search.
+Unit tests without network cover every rule of the chain, the provider calls and the settings. An end-to-end test with a model (36 questions, four setups, 144 runs through Hermes' real tool path) had no failed run, and the intended stage served every search; with an invalid Exa key Parallel served, with invalid Exa and Parallel keys Firecrawl. Not verified: a really used-up quota (HTTP 402 and the 24-hour pause).
 
-  | | Exa capped | Exa uncapped | Parallel `/v1/search` | Parallel beta (as Hermes) |
-  |---|---|---|---|---|
-  | Correct answers, of 36 | 36 | 36 | 34 | 36 |
-  | Time per search, median | 1.8 s | 2.0 s | 3.3 s | 3.0 s |
-  | Input tokens, all questions | 430,606 | 484,082 | 497,072 | 494,759 |
-
-  Two blind judges scored all answers and agreed on every one. With 36 questions only large differences would show; the answers are at the ceiling, so the setups differ in effort, not in correctness.
-- **Fallback:** with an invalid Exa key the log showed `exa=http_401 parallel=ok`, with invalid Exa and Parallel keys `exa=http_401 parallel=http_401 firecrawl=ok`; the model got usable results both times.
-- **External code reviews:** three independent reviews of v0.1.0 found nothing critical. What was adopted is in v0.1.1; what was not is recorded with its reason (design D13–D16).
-- **Not verified:** a really used-up quota (HTTP 402 and the 24-hour pause).
-
-Setup, judging, all tables and limits: [docs/validation.md](docs/validation.md). Questions, per-run results and answers: [`data/end-to-end/`](data/end-to-end).
+Setup, judging, all tables, limits and the external code reviews: [docs/validation.md](docs/validation.md). Questions, per-run results and answers: [`data/end-to-end/`](data/end-to-end).
 
 ## Update and uninstall
 
@@ -184,7 +157,7 @@ grep -o "search-chain: .*" logs/agent.log | grep -o "[a-z]*=ok" | sort | uniq -c
 They need vendor SDKs that Hermes installs on first use. Calling the REST APIs directly needs nothing extra, gives exact status codes, and reaches Exa's highlight cap, which the built-in provider does not expose.
 
 **Which Parallel endpoint, and why?**
-The beta endpoint in mode `agentic`, the call Hermes 0.21.6 makes. Measured twice against `/v1/search` in mode `advanced`, it was never worse (72 against 70 of 75 queries without a model, 36 against 34 of 36 questions with a model) and equally fast inside Hermes. The differences are not statistically firm, but nothing measured favours `/v1/search`. Parallel reserves the beta endpoint for existing integrations; if it is switched off, set `SEARCH_CHAIN_PARALLEL_API=v1`. Mode `fast` on `/v1/search` was clearly worse (49 of 75) and is not offered.
+The beta endpoint in mode `agentic`, the call Hermes 0.21.6 makes; it was never worse than `/v1/search` in two tests (design D2). If Parallel switches the beta endpoint off, set `SEARCH_CHAIN_PARALLEL_API=v1`.
 
 **Does it merge or re-rank results from several services?**
 No. A simulation on the comparison data showed no measurable gain from merging; all results of one search come from one service.
@@ -198,7 +171,7 @@ No. `web.extract_backend` is unaffected; see [hermes-extract-chain](https://gith
 uv sync                                   # Python >= 3.11, httpx as in Hermes
 uv run ruff check && uv run ruff format --check
 uv run pytest
-uv run python scripts/recompute.py         # recomputes the tables of the documents; CI checks that it runs
+uv run python scripts/recompute.py         # recomputes the tables of the documents; the tests run it
 ```
 
 | Path | Content |
@@ -207,10 +180,11 @@ uv run python scripts/recompute.py         # recomputes the tables of the docume
 | `tests/` | Unit tests without network (`httpx.MockTransport`; Hermes is stubbed in `conftest.py`) |
 | `scripts/recompute.py` | Recomputes the tables of the evaluation and validation documents from the CSV files in `data/` |
 | `scripts/live_check.py` | Calls Hermes' real `web_search` path in a profile, without an LLM and with rate limiting; can break keys to force the fallback |
-| `docs/` | [evaluation](docs/evaluation.md) (provider choice, test method, results), [design](docs/design.md) (requirements and decisions with their reasons), [validation](docs/validation.md) (tests, reviews, end-to-end test with a model) |
+| `docs/` | [evaluation](docs/evaluation.md) (provider choice, test method, results), [design](docs/design.md) (requirements and decisions with their reasons), [validation](docs/validation.md) (tests, reviews, end-to-end test with a model), [reviews](docs/reviews) (points settled in external reviews) |
 | `data/` | Test data as CSV: queries, per-query results of both comparison runs, questions and answers of the end-to-end test ([description](data/README.md)) |
+| `.github/workflows/ci.yml` | CI on pull requests and pushes to `main`: ruff and pytest on Python 3.11 and 3.14 |
 
-`pyproject.toml` only configures the tooling. It sits at the repository root on purpose: Hermes treats a plugin directory that contains a `pyproject.toml` as a package-manager member.
+`pyproject.toml` only configures the tooling and sits at the repository root because Hermes treats a plugin directory with a `pyproject.toml` as a package-manager member.
 
 ## Authors
 
