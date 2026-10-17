@@ -324,3 +324,18 @@ def test_timeouts_are_passed_to_httpx():
         "api.parallel.ai": 15.0,
         "api.firecrawl.dev": 15.0,
     }
+
+
+@pytest.mark.parametrize(("fn", "name"), ENGINES)
+@pytest.mark.parametrize(("query", "key"), [("q", "key-with​zero-width-space"), ("q\ud800", "k")])
+def test_request_that_cannot_be_built_is_no_malformed_reply(fn, name, query, key):
+    """A4: nothing was sent, so this is no reply at all; the exception class names the cause."""
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(200, json={})
+
+    out = call(fn, handler, query, 5, key)
+    assert sent == []
+    assert out == {"error": f"{name}: UnicodeEncodeError", "code": "UnicodeEncodeError", "status": None}

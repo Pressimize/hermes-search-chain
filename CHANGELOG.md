@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A request that cannot be built, e.g. because the key contains an invisible Unicode character, fails its stage as `<Provider>: UnicodeEncodeError`. Before, it was reported as `malformed reply`, although nothing had been sent.
+
 ## 0.1.1 – 2026-10-11
 
 Hardening after three external code reviews of 0.1.0. The order of the chain, the lengths of the pauses and the settings are unchanged.

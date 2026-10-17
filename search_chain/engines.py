@@ -64,7 +64,10 @@ def _post(
 ) -> tuple[dict | None, dict | None]:
     """(JSON object of a 2xx reply, None) or (None, error dict)."""
     try:
-        response = client.post(url, json=body, headers=headers, timeout=timeout)
+        try:
+            response = client.post(url, json=body, headers=headers, timeout=timeout)
+        except ValueError as exc:  # e.g. a key or query httpx cannot encode: nothing was sent, so no reply (A4)
+            return None, _error(provider, type(exc).__name__, type(exc).__name__, key)
         if not 200 <= response.status_code < 300:
             status = response.status_code
             return None, _error(provider, f"HTTP {status} {_detail(response)}", f"http_{status}", key, status)
