@@ -92,6 +92,13 @@ def test_rows_without_a_web_url_are_dropped(url):
     assert out == {"rows": [{"url": "HTTPS://A.example/", "title": "kept", "description": "", "position": 1}]}
 
 
+def test_http_urls_are_kept_in_any_letter_case():
+    """S4: both schemes count, in any letter case; the URL is passed on as sent."""
+    urls = ["http://a.example/", "HTTP://B.example/", "Https://c.example/"]
+    out = call(engines.exa, reply({"results": [{"url": u} for u in urls]}), "q", 5, "k")
+    assert [row["url"] for row in out["rows"]] == urls
+
+
 def test_title_and_description_that_are_no_text_become_empty():
     web = [{"url": "https://a.example/", "title": 7, "description": {"d": 1}}]
     out = call(engines.firecrawl, reply({"success": True, "data": {"web": web}}), "q", 5, "k")
@@ -226,7 +233,7 @@ def test_api_error_detail(fn, name, body, detail):
 
 
 @pytest.mark.parametrize(("fn", "name"), ENGINES)
-@pytest.mark.parametrize("code", [199, 302, 400])
+@pytest.mark.parametrize("code", [199, 300, 302, 400])
 def test_only_2xx_is_a_reply(fn, name, code):
     body = {
         "success": True,
