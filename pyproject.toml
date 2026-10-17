@@ -2,7 +2,7 @@
 # $HERMES_HOME/plugins/ without this file (design I3: no pyproject.toml inside the plugin directory).
 [project]
 name = "hermes-search-chain"
-version = "0.1.1"
+version = "0.1.2"
 description = "Hermes Agent plugin: web_search fallback chain Exa -> Parallel -> Firecrawl"
 requires-python = ">=3.11"
 license = "MIT"

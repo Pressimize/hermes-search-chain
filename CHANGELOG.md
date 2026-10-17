@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 – 2026-10-17
+
+Fixes from a review by seven models and from a mutation run, and alignment with hermes-extract-chain. The order of the chain, the pauses and the settings are unchanged.
 
 - A request that cannot be built, e.g. because the key contains an invisible Unicode character, fails its stage as `<Provider>: UnicodeEncodeError`. Before, it was reported as `malformed reply`, although nothing had been sent.
 - A Firecrawl reply with a 2xx status and `success: false` keeps its reason: `Firecrawl: <reason>` (log code `rejected`) instead of `Firecrawl: malformed reply`.
