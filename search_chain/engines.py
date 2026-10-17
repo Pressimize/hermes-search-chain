@@ -43,12 +43,8 @@ def _malformed(provider: str, key: str) -> dict:
     return _error(provider, "malformed reply", "malformed", key)
 
 
-def _detail(response: httpx.Response) -> str:
-    """A4: the vendor's own reason for a non-2xx reply."""
-    try:
-        body = response.json()
-    except (ValueError, RecursionError):  # an unreadable body must not hide the status (K5)
-        body = None
+def _reason(body: object) -> str:
+    """A4: the vendor's own reason in a JSON body, or ""."""
     if isinstance(body, dict):
         for field in ("tag", "error", "message"):
             value = body.get(field)
@@ -56,7 +52,16 @@ def _detail(response: httpx.Response) -> str:
                 value = value.get("message")
             if value:
                 return str(value)
-    return response.text.strip()
+    return ""
+
+
+def _detail(response: httpx.Response) -> str:
+    """A4: the vendor's own reason for a non-2xx reply."""
+    try:
+        body = response.json()
+    except (ValueError, RecursionError):  # an unreadable body must not hide the status (K5)
+        body = None
+    return _reason(body) or response.text.strip()
 
 
 def _post(
@@ -64,7 +69,10 @@ def _post(
 ) -> tuple[dict | None, dict | None]:
     """(JSON object of a 2xx reply, None) or (None, error dict)."""
     try:
-        response = client.post(url, json=body, headers=headers, timeout=timeout)
+        try:
+            response = client.post(url, json=body, headers=headers, timeout=timeout)
+        except ValueError as exc:  # e.g. a key or query httpx cannot encode: nothing was sent, so no reply (A4)
+            return None, _error(provider, type(exc).__name__, type(exc).__name__, key)
         if not 200 <= response.status_code < 300:
             status = response.status_code
             return None, _error(provider, f"HTTP {status} {_detail(response)}", f"http_{status}", key, status)
@@ -147,6 +155,8 @@ def firecrawl(client: httpx.Client, query: str, limit: int, key: str) -> dict:
     data, error = _post(client, "Firecrawl", FIRECRAWL_URL, key, FIRECRAWL_TIMEOUT, headers, body)
     if error:
         return error
+    if data.get("success") is False and (reason := _reason(data)):  # A3: a 2xx reply that reports a failure
+        return _error("Firecrawl", reason, "rejected", key)
     payload = data.get("data")
     if data.get("success") is not True or not isinstance(payload, dict):
         return _malformed("Firecrawl", key)

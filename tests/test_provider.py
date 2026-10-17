@@ -89,6 +89,7 @@ def test_manifest_and_register():
     assert manifest["provides_web_providers"] == ["search-chain"]
     assert [e["name"] for e in manifest["requires_env"]] == ["EXA_API_KEY", "PARALLEL_API_KEY", "FIRECRAWL_API_KEY"]
     assert all(e["secret"] is True for e in manifest["requires_env"])
+    assert [e["name"] for e in manifest["optional_env"]] == [provider.HIGHLIGHT_SETTING, provider.PARALLEL_SETTING]
     assert not (Path(search_chain.__file__).parent / "pyproject.toml").exists()  # I3
 
     registered = []
@@ -395,6 +396,7 @@ def test_unexpected_exception_becomes_a_failure(env, logs, monkeypatch):
     monkeypatch.setattr(provider, "STAGES", (("exa", "Exa", "EXA_API_KEY", boom),))
     assert chain(Api()).search("q") == {"success": False, "error": "search-chain: RuntimeError"}
     assert lines(logs, logging.WARNING) == ["search-chain: call failed: RuntimeError"]
+    assert lines(logs) == ["search-chain: no stage ran"]  # L1
     assert "exa-SECRET" not in logs.text
 
 

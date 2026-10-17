@@ -189,6 +189,20 @@ def test_firecrawl_unexpected_reply(body):
     assert out == {"error": "Firecrawl: malformed reply", "code": "malformed", "status": None}
 
 
+@pytest.mark.parametrize(
+    ("body", "detail"),
+    [
+        ({"success": False, "error": "Payment Required: no credits"}, "Payment Required: no credits"),
+        ({"success": False, "error": {"message": "Rate limit"}}, "Rate limit"),
+        ({"success": False, "error": "bad key fc-secret-123"}, "bad key [key]"),
+    ],
+)
+def test_firecrawl_2xx_failure_keeps_its_reason(body, detail):
+    """A3: success false with a reason names it; a 2xx status starts no pause (K5)."""
+    out = call(engines.firecrawl, reply(body), "q", 5, "fc-secret-123")
+    assert out == {"error": f"Firecrawl: {detail}", "code": "rejected", "status": None}
+
+
 # --- A4 errors ------------------------------------------------------------------------------------
 
 
@@ -226,6 +240,13 @@ def test_only_2xx_is_a_reply(fn, name, code):
 def test_api_error_plain_text(fn, name):
     out = call(fn, lambda request: httpx.Response(503, text=" upstream down \n"), "q", 5, "k")
     assert out == {"error": f"{name}: HTTP 503 upstream down", "code": "http_503", "status": 503}
+
+
+@pytest.mark.parametrize(("fn", "name"), ENGINES)
+def test_api_error_json_without_a_known_field(fn, name):
+    """A4: without tag, error or message the response text is the detail."""
+    out = call(fn, reply({"requestId": "r1", "status": "busy"}, 429), "q", 5, "k")
+    assert out == {"error": f'{name}: HTTP 429 {{"requestId":"r1","status":"busy"}}', "code": "http_429", "status": 429}
 
 
 @pytest.mark.parametrize(("fn", "name"), ENGINES)
@@ -324,3 +345,18 @@ def test_timeouts_are_passed_to_httpx():
         "api.parallel.ai": 15.0,
         "api.firecrawl.dev": 15.0,
     }
+
+
+@pytest.mark.parametrize(("fn", "name"), ENGINES)
+@pytest.mark.parametrize(("query", "key"), [("q", "key-with​zero-width-space"), ("q\ud800", "k")])
+def test_request_that_cannot_be_built_is_no_malformed_reply(fn, name, query, key):
+    """A4: nothing was sent, so this is no reply at all; the exception class names the cause."""
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(200, json={})
+
+    out = call(fn, handler, query, 5, key)
+    assert sent == []
+    assert out == {"error": f"{name}: UnicodeEncodeError", "code": "UnicodeEncodeError", "status": None}

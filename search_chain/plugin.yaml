@@ -18,3 +18,8 @@ requires_env:
   - name: FIRECRAWL_API_KEY
     description: "Firecrawl API key (stage 3, skipped if unset)"
     secret: true
+optional_env:
+  - name: SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS
+    description: "Characters of Exa highlights per result (default 600; 0 uses Exa's default)"
+  - name: SEARCH_CHAIN_PARALLEL_API
+    description: "Set to v1 to call Parallel's GA endpoint instead of the beta endpoint"
