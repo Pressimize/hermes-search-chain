@@ -9,6 +9,7 @@ PROFILE   Hermes profile with the plugin installed, web.search_backend: search-c
 --break   replace the key of these stages with an invalid value inside this process, so the stage answers
           with an error (usually HTTP 401) and the next stage has to serve; for searxng and degoog the address
           is replaced with one where nothing listens, so the stage fails with a transport error.
+          A stage without a key or address in the profile is switched on this way, too.
 --pace    wait after each query in seconds (default 7.5: below 8 requests/min per provider).
 
 Hermes is found under %LOCALAPPDATA%/hermes, i.e. Hermes Desktop on Windows (override with HERMES_ROOT).
@@ -117,7 +118,9 @@ def main():
         info = [line for line in collect.lines if "paused for" not in line and "call failed" not in line]
         steps = info[-1].split(": ", 1)[1] if info else "(no log line: served from Hermes' cache?)"
         for stage in SETTINGS:
-            if f"{stage}=" in steps and not any(f"{stage}={skip}" in steps for skip in ("no_key", "no_url", "paused")):
+            if f"{stage}=" in steps and not any(
+                f"{stage}={skip}" in steps for skip in ("no_key", "no_url", "bad_url", "paused")
+            ):
                 counts[stage] += 1
         print(f"{duration:>5} s  {steps:<60} rows={len(rows)} chars={len(raw):>6}  "
               f"{(data.get('error') or '')[:90]}", flush=True)  # fmt: skip

@@ -67,7 +67,9 @@ def _reason(body: object) -> str:
                 if isinstance(value, dict):
                     value = value.get("msg")
             elif isinstance(value, dict):  # e.g. Brave {"error": {"detail": ...}}, Tavily {"detail": {"error": ...}}
-                value = value.get("message") or value.get("detail") or value.get("error")
+                value = next(
+                    (v for k in ("message", "detail", "error") if isinstance(v := value.get(k), str) and v), ""
+                )
             if value:
                 return str(value)
     return ""

@@ -702,3 +702,34 @@ def test_new_keys_never_in_result_or_log(all_stages, logs):
     assert result["error"].count("[key]") == 4
     for name in ("brave", "nimble", "tavily", "ydc"):
         assert f"{name}-SECRET" not in json.dumps(result) and f"{name}-SECRET" not in logs.text
+
+
+# --- gaps found by the mutation run of 0.2.0 ------------------------------------------------------
+
+
+def test_pause_belongs_to_the_stage_as_well(env):
+    """K5: two stages with the same address do not share a pause."""
+    env.clear()
+    env.update(SEARXNG_URL="http://same.test", DEGOOG_URL="http://same.test")
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        return httpx.Response(402, json={"error": "x"}) if request.url.path == "/search" else empty(request)
+
+    chain(handler).search("q")
+    assert seen == ["/search", "/api/search"]  # Degoog is asked although SearXNG at the same address is paused
+
+
+def test_highlight_setting_needs_ascii_digits(env):
+    env["SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS"] = "٣٠٠"  # 300 in Arabic-Indic digits
+    api = Api()
+    chain(api).search("q")
+    assert json.loads(api.requests[0].content)["contents"] == {"highlights": {"maxCharacters": 600}}
+
+
+def test_different_bad_orders_warn_only_once(all_stages, logs):
+    for value in ("foo", "bar"):
+        all_stages["SEARCH_CHAIN_ORDER"] = value
+        chain(none_serve()).search("q")
+    assert len(lines(logs, logging.WARNING)) == 1

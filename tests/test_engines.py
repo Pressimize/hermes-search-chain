@@ -648,3 +648,63 @@ def test_vendor_reasons(body, detail):
     """A4: the reason fields of the services added in 0.2.0."""
     out = call(engines.brave, reply(body, 422), "q", 5, "k")
     assert out["error"] == f"Brave: HTTP 422 {detail}"
+
+
+@pytest.mark.parametrize(("fn", "name"), ALL)
+@pytest.mark.parametrize(
+    ("body", "detail"),
+    [
+        ({"error": {"detail": "d"}}, "d"),
+        ({"error": {"error": {"x": 1}}, "message": "m"}, "m"),  # only text counts in a nested object
+        ({"error": {"message": 5}}, '{"error":{"message":5}}'),
+        ({"message": ["a", 1]}, "a"),
+        ({"error": [["x"]]}, "['x']"),
+        ({"detail": "d"}, "d"),
+    ],
+)
+def test_reason_shapes_are_the_same_for_every_stage(fn, name, body, detail):
+    """A4 (0.2.0): `detail`, nested objects and lists are read alike for all stages, Exa, Parallel and Firecrawl
+    included; before 0.2.0 these three gave the response text for `detail` and nested `detail`, and str() of a list."""
+    out = call(fn, reply(body, 400), "q", 5, "k")
+    assert out["error"] == f"{name}: HTTP 400 {detail}"
+
+
+# --- gaps found by the mutation run of 0.2.0 ------------------------------------------------------
+
+
+def test_degoog_reads_snippet_not_content():
+    body = {"results": [{"url": "https://a.example/", "snippet": "S", "content": "C"}]}
+    assert call(engines.degoog, reply(body), "q", 5, DEGOOG)["rows"][0]["description"] == "S"
+
+
+def test_firecrawl_2xx_without_success_field_is_malformed():
+    out = call(engines.firecrawl, reply({"error": "boom", "data": {"web": []}}), "q", 5, "k")
+    assert out == {"error": "Firecrawl: malformed reply", "code": "malformed", "status": None}
+
+
+@pytest.mark.parametrize("fn", [engines.searxng, engines.degoog])
+def test_address_with_trailing_slash_is_masked_without_it(fn):
+    out = call(fn, lambda request: httpx.Response(500, text="https://sx.lan:8080 down"), "q", 5, "https://sx.lan:8080/")
+    assert "sx.lan" not in out["error"]
+
+
+@pytest.mark.parametrize(
+    ("body", "detail"),
+    [
+        ({"error": {"message": "M", "detail": "D"}}, "M"),
+        ({"error": {"detail": "D", "error": "E"}}, "D"),
+        ({"tag": "", "message": "M"}, "M"),
+    ],
+)
+def test_reason_order(body, detail):
+    assert call(engines.exa, reply(body, 400), "q", 5, "k")["error"] == f"Exa: HTTP 400 {detail}"
+
+
+def test_status_299_is_a_reply():
+    body = {"results": [{"url": "https://a.example/"}]}
+    assert call(engines.nimble, reply(body, 299), "q", 5, "k")["rows"][0]["url"] == "https://a.example/"
+
+
+@pytest.mark.parametrize("address", ["http://host.test\x7f", "http://ho​st.test"])
+def test_address_with_an_unprintable_character_is_invalid(address):
+    assert call(engines.searxng, reply({}), "q", 5, address)["code"] == "bad_url"
