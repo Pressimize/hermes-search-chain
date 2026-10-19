@@ -5,7 +5,25 @@ import pytest
 
 from search_chain import engines
 
-ENGINES = [(engines.exa, "Exa"), (engines.parallel, "Parallel"), (engines.firecrawl, "Firecrawl")]
+ENGINES = [
+    (engines.exa, "Exa"),
+    (engines.parallel, "Parallel"),
+    (engines.brave, "Brave"),
+    (engines.nimble, "Nimble"),
+    (engines.tavily, "Tavily"),
+    (engines.youcom, "You.com"),
+    (engines.firecrawl, "Firecrawl"),
+]
+
+
+def _hosted(fn, address):
+    """A self-hosted stage takes its address where the others take a key (A13)."""
+    return lambda client, query, limit, key: fn(client, query, limit, address)
+
+
+SEARX, DEGOOG = "http://searx.test", "http://degoog.test"
+HOSTED = [(_hosted(engines.searxng, SEARX), "SearXNG"), (_hosted(engines.degoog, DEGOOG), "Degoog")]
+ALL = ENGINES + HOSTED
 
 
 def call(fn, handler, *args):
@@ -217,7 +235,7 @@ def test_firecrawl_2xx_failure_keeps_its_reason(body, detail):
 # --- A4 errors ------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("fn", "name"), ENGINES)
+@pytest.mark.parametrize(("fn", "name"), ALL)
 @pytest.mark.parametrize(
     ("body", "detail"),
     [
@@ -235,7 +253,7 @@ def test_api_error_detail(fn, name, body, detail):
     assert out == {"error": f"{name}: HTTP 402 {detail}", "code": "http_402", "status": 402}
 
 
-@pytest.mark.parametrize(("fn", "name"), ENGINES)
+@pytest.mark.parametrize(("fn", "name"), ALL)
 @pytest.mark.parametrize("code", [199, 300, 302, 400])
 def test_only_2xx_is_a_reply(fn, name, code):
     body = {
@@ -247,20 +265,20 @@ def test_only_2xx_is_a_reply(fn, name, code):
     assert out == {"error": f"{name}: HTTP {code} moved", "code": f"http_{code}", "status": code}
 
 
-@pytest.mark.parametrize(("fn", "name"), ENGINES)
+@pytest.mark.parametrize(("fn", "name"), ALL)
 def test_api_error_plain_text(fn, name):
     out = call(fn, lambda request: httpx.Response(503, text=" upstream down \n"), "q", 5, "k")
     assert out == {"error": f"{name}: HTTP 503 upstream down", "code": "http_503", "status": 503}
 
 
-@pytest.mark.parametrize(("fn", "name"), ENGINES)
+@pytest.mark.parametrize(("fn", "name"), ALL)
 def test_api_error_json_without_a_known_field(fn, name):
     """A4: without tag, error or message the response text is the detail."""
     out = call(fn, reply({"requestId": "r1", "status": "busy"}, 429), "q", 5, "k")
     assert out == {"error": f'{name}: HTTP 429 {{"requestId":"r1","status":"busy"}}', "code": "http_429", "status": 429}
 
 
-@pytest.mark.parametrize(("fn", "name"), ENGINES)
+@pytest.mark.parametrize(("fn", "name"), ALL)
 def test_timeout_and_transport_error(fn, name):
     def slow(request):
         raise httpx.ReadTimeout("slow", request=request)
@@ -272,7 +290,7 @@ def test_timeout_and_transport_error(fn, name):
     assert call(fn, down, "q", 5, "k") == {"error": f"{name}: ConnectError", "code": "ConnectError", "status": None}
 
 
-@pytest.mark.parametrize(("fn", "name"), ENGINES)
+@pytest.mark.parametrize(("fn", "name"), [e for e in ALL if e[1] != "Brave"])  # Brave: test_brave_unexpected_reply
 @pytest.mark.parametrize(
     "response",
     [
@@ -295,7 +313,7 @@ def test_error_text_is_cut_and_key_masked(fn, name):
     assert len(out["error"]) == len(f"{name}: ") + 200
 
 
-@pytest.mark.parametrize(("fn", "name"), ENGINES)
+@pytest.mark.parametrize(("fn", "name"), ALL)
 def test_error_text_is_one_printable_line(fn, name):
     """A4: a reply cannot add lines or control characters to the log."""
     reason = "NO_CREDITS\nERROR forged line\r\n\tx\x1b[31my\x00z\u2028w"
@@ -336,7 +354,7 @@ def test_key_is_masked_before_the_text_is_shortened(monkeypatch):
     assert out["error"] == "Exa: HTTP 401 " + "y" * 21  # only the first 30 characters are looked at
 
 
-@pytest.mark.parametrize(("fn", "name"), ENGINES)
+@pytest.mark.parametrize(("fn", "name"), ALL)
 def test_reply_the_parser_gives_up_on(fn, name):
     """A4, K5: a body nested too deeply to parse keeps the status of an error reply; as a 2xx it is malformed."""
     deep = "[" * 200_000
@@ -356,11 +374,17 @@ def test_timeouts_are_passed_to_httpx():
         seen[request.url.host] = request.extensions["timeout"]
         return httpx.Response(500)
 
-    for fn, _ in ENGINES:
+    for fn, _ in ALL:
         call(fn, handler, "q", 5, "k")
     assert {host: t["read"] for host, t in seen.items()} == {
         "api.exa.ai": 10.0,
         "api.parallel.ai": 15.0,
+        "api.search.brave.com": 10.0,
+        "sdk.nimbleway.com": 15.0,
+        "api.tavily.com": 15.0,
+        "ydc-index.io": 10.0,
+        "searx.test": 15.0,
+        "degoog.test": 10.0,
         "api.firecrawl.dev": 15.0,
     }
 
@@ -378,3 +402,249 @@ def test_request_that_cannot_be_built_is_no_malformed_reply(fn, name, query, key
     out = call(fn, handler, query, 5, key)
     assert sent == []
     assert out == {"error": f"{name}: UnicodeEncodeError", "code": "UnicodeEncodeError", "status": None}
+
+
+# --- A7 to A12: the services added in 0.2.0 -------------------------------------------------------
+
+
+def capture_get(reply_body):
+    seen = {}
+
+    def handler(request):
+        seen["method"], seen["url"], seen["headers"] = request.method, request.url, request.headers
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json=reply_body)
+
+    return seen, handler
+
+
+def test_brave_request_and_rows():
+    seen, handler = capture_get(
+        {"web": {"results": [{"url": "https://a.example/", "title": "<strong>A</strong>", "description": "D"}]}}
+    )
+    out = call(engines.brave, handler, "what is x", 10, "brave-key")
+    assert seen["method"] == "GET"
+    assert str(seen["url"].copy_with(query=None)) == "https://api.search.brave.com/res/v1/web/search"
+    assert seen["params"] == {"q": "what is x", "count": "10"}
+    assert seen["headers"]["x-subscription-token"] == "brave-key"
+    assert seen["headers"]["accept"] == "application/json"
+    assert "brave-key" not in str(seen["url"])  # the key only travels in the header
+    assert out == {"rows": [{"url": "https://a.example/", "title": "A", "description": "D", "position": 1}]}
+
+
+def test_brave_strong_tags_go_before_the_cut():
+    """A7: in any letter case, in title and description; other tags and entities stay."""
+    item = {
+        "url": "https://a.example/",
+        "title": "<STRONG>" + "t" * 296 + "</Strong>xyz",
+        "description": "<strong>" * 2000 + "d" * 16000 + "&amp;",
+    }
+    out = call(engines.brave, reply({"web": {"results": [item]}}), "q", 5, "k")
+    row = out["rows"][0]
+    assert row["title"] == "t" * 296 + "xyz"
+    assert row["description"] == "d" * 16000
+    item["description"] = "a <b>b</b> &amp; <strong>c</strong>"
+    out = call(engines.brave, reply({"web": {"results": [item]}}), "q", 5, "k")
+    assert out["rows"][0]["description"] == "a <b>b</b> &amp; c"
+
+
+@pytest.mark.parametrize("body", [{}, {"web": None}, {"web": {}}, {"web": {"results": []}}, {"query": {}}])
+def test_brave_without_web_results_is_empty(body):
+    assert call(engines.brave, reply(body), "q", 5, "k") == {"rows": []}
+
+
+@pytest.mark.parametrize("body", [{"web": "text"}, {"web": []}, {"web": {"results": "x"}}, {"web": {"results": ["x"]}}])
+def test_brave_unexpected_reply(body):
+    out = call(engines.brave, reply(body), "q", 5, "k")
+    assert out == {"error": "Brave: malformed reply", "code": "malformed", "status": None}
+
+
+def test_nimble_request_and_rows():
+    seen, handler = capture({"results": [{"url": "https://a.example/", "title": "A", "description": "D"}]})
+    out = call(engines.nimble, handler, "what is x", 10, "nim-key")
+    assert seen["url"] == "https://sdk.nimbleway.com/v2/search"
+    assert seen["headers"]["authorization"] == "Bearer nim-key"
+    assert seen["body"] == {
+        "query": "what is x",
+        "search_depth": "lite",
+        "focus": "general",
+        "full_content": False,
+        "max_results": 10,
+    }
+    assert out == {"rows": [{"url": "https://a.example/", "title": "A", "description": "D", "position": 1}]}
+
+
+def test_tavily_request_and_rows():
+    seen, handler = capture({"results": [{"url": "https://a.example/", "title": "A", "content": "C", "score": 1}]})
+    out = call(engines.tavily, handler, "what is x", 10, "tvly-key")
+    assert seen["url"] == "https://api.tavily.com/search"
+    assert seen["headers"]["authorization"] == "Bearer tvly-key"
+    assert seen["body"] == {"query": "what is x", "search_depth": "basic", "max_results": 10, "include_answer": False}
+    assert out == {"rows": [{"url": "https://a.example/", "title": "A", "description": "C", "position": 1}]}
+
+
+def test_youcom_request_and_rows():
+    item = {"url": "https://a.example/", "title": "A", "description": "D", "snippets": ["s1", 2, "", "s2"]}
+    seen, handler = capture({"results": {"web": [item], "news": [{"url": "https://n.example/"}]}})
+    out = call(engines.youcom, handler, "what is x", 10, "ydc-key")
+    assert seen["url"] == "https://ydc-index.io/v1/search"
+    assert seen["headers"]["x-api-key"] == "ydc-key"
+    assert seen["body"] == {"query": "what is x", "count": 10}
+    assert out == {"rows": [{"url": "https://a.example/", "title": "A", "description": "D s1 s2", "position": 1}]}
+    only_snippets = {"url": "https://a.example/", "snippets": ["s"]}
+    out = call(engines.youcom, reply({"results": {"web": [only_snippets]}}), "q", 5, "k")
+    assert out["rows"][0]["description"] == "s"
+
+
+@pytest.mark.parametrize("body", [{}, {"results": []}, {"results": "x"}])
+def test_youcom_unexpected_reply(body):
+    out = call(engines.youcom, reply(body), "q", 5, "k")
+    assert out == {"error": "You.com: malformed reply", "code": "malformed", "status": None}
+
+
+def test_youcom_without_web_results_is_empty():
+    assert call(engines.youcom, reply({"results": {"news": []}}), "q", 5, "k") == {"rows": []}
+
+
+@pytest.mark.parametrize(
+    ("fn", "shape"),
+    [
+        (engines.nimble, "list"),
+        (engines.tavily, "list"),
+        (_hosted(engines.searxng, SEARX), "list"),
+        (_hosted(engines.degoog, DEGOOG), "list"),
+        (engines.youcom, "youcom"),
+        (engines.brave, "brave"),
+    ],
+)
+def test_rows_are_cut_to_the_limit_after_dropping_non_web_urls(fn, shape):
+    """A6: the first rows with a web URL, numbered from 1 without gaps."""
+    items = [{"url": "ftp://x/"}] + [{"url": f"https://{i}.example/"} for i in range(5)]
+    body = {
+        "list": {"results": items},
+        "youcom": {"results": {"web": items}},
+        "brave": {"web": {"results": items}},
+    }[shape]
+    out = call(fn, reply(body), "q", 3, "k")
+    assert [(row["url"], row["position"]) for row in out["rows"]] == [
+        ("https://0.example/", 1),
+        ("https://1.example/", 2),
+        ("https://2.example/", 3),
+    ]
+
+
+def test_searxng_request_and_rows():
+    items = [{"url": "https://a.example/", "title": "A", "content": "C", "engines": ["bing"], "score": 2}]
+    seen, handler = capture_get({"results": items, "unresponsive_engines": [["google", "timeout"]]})
+    out = call(engines.searxng, handler, "what is x", 10, "https://host.test/searx//")
+    assert seen["method"] == "GET"
+    assert str(seen["url"].copy_with(query=None)) == "https://host.test/searx/search"
+    assert seen["params"] == {"q": "what is x", "format": "json"}
+    assert seen["headers"]["accept"] == "*/*"  # as measured: no header of its own
+    assert out == {"rows": [{"url": "https://a.example/", "title": "A", "description": "C", "position": 1}]}
+
+
+def test_degoog_request_and_rows():
+    items = [{"url": "https://a.example/", "title": "A", "snippet": "S", "content": "S", "source": "Brave"}]
+    seen, handler = capture_get({"results": items, "engineTimings": []})
+    out = call(engines.degoog, handler, "what is x", 10, "HTTP://DEGOOG.test:4444/")
+    assert seen["method"] == "GET"
+    assert str(seen["url"].copy_with(query=None)) == "http://degoog.test:4444/api/search"
+    assert seen["params"] == {"q": "what is x"}
+    assert out == {"rows": [{"url": "https://a.example/", "title": "A", "description": "S", "position": 1}]}
+
+
+def test_query_with_special_characters_is_encoded_in_the_url():
+    for fn, key, body in ((engines.searxng, SEARX, {"results": []}), (engines.brave, "k", {"web": {}})):
+        seen, handler = capture_get(body)
+        call(fn, handler, "a b&c=d#é", 5, key)
+        assert seen["params"]["q"] == "a b&c=d#é"
+
+
+@pytest.mark.parametrize("fn", [engines.searxng, engines.degoog])
+def test_query_that_cannot_be_encoded_sends_nothing(fn):
+    sent = []
+    out = call(fn, lambda request: sent.append(request) or httpx.Response(200, json={}), "q\ud800", 5, SEARX)
+    assert sent == [] and out["code"] == "UnicodeEncodeError"
+
+
+@pytest.mark.parametrize("fn", [engines.searxng, engines.degoog])
+@pytest.mark.parametrize(
+    "address",
+    [
+        "",
+        "/",
+        "searx.test",
+        "ftp://searx.test",
+        "http://",
+        "http://:80",
+        "http:///x",
+        "http://user:pw@:80",
+        "http://[::1",
+        "http://host.test:abc",
+        "http://host.test:99999",
+        "http://host .test",
+        "http://host.test/?x=1",
+        "http://host.test/#top",
+        "http://host.test\n",
+    ],
+)
+def test_invalid_address_asks_nothing(fn, address):
+    """A13: an address that is no http(s) URL with a host fails the stage with bad_url."""
+    sent = []
+    out = call(fn, lambda request: sent.append(request) or httpx.Response(200, json={}), "q", 5, address)
+    name = "SearXNG" if fn is engines.searxng else "Degoog"
+    assert out == {"error": f"{name}: invalid URL setting", "code": "bad_url", "status": None}
+    assert sent == []
+
+
+@pytest.mark.parametrize("address", ["http://[::1]:8080", "https://u:p@host.test", "http://10.0.0.5:8888/searx"])
+def test_valid_addresses(address):
+    seen, handler = capture_get({"results": []})
+    assert call(engines.searxng, handler, "q", 5, address) == {"rows": []}
+    assert str(seen["url"].copy_with(query=None)).endswith("/search")
+
+
+@pytest.mark.parametrize("fn", [engines.searxng, engines.degoog])
+def test_address_never_in_the_error_text(fn):
+    """A13: the address may hold credentials; an echo is masked, a transport error names only the class."""
+    address = "http://user:secret@searx.test"
+
+    def echo(request):
+        return httpx.Response(404, text=f"not found: {address}/search")
+
+    def down(request):
+        raise httpx.ConnectError(f"cannot reach {address}", request=request)
+
+    for handler in (echo, down):
+        out = call(fn, handler, "q", 5, address)
+        assert "secret" not in out["error"] and "searx.test" not in out["error"]
+
+
+@pytest.mark.parametrize(
+    ("body", "detail"),
+    [
+        (  # Brave
+            {"type": "ErrorResponse", "error": {"id": "1", "status": 422, "detail": "Unable to validate", "code": "X"}},
+            "Unable to validate",
+        ),
+        (
+            {"detail": {"error": "Unauthorized: missing or invalid API key."}},
+            "Unauthorized: missing or invalid API key.",
+        ),
+        ({"detail": [{"loc": ["body", "query"], "msg": "Field required", "type": "missing"}]}, "Field required"),
+        ({"detail": "Invalid API key"}, "Invalid API key"),  # You.com 401/403
+        ({"error": "Payment Required", "message": "No credits left", "upgrade_url": "https://x"}, "Payment Required"),
+        (  # Nimble 500
+            {"success": "false", "task_id": "t", "message": "can't download the query response - please try again"},
+            "can't download the query response - please try again",
+        ),
+        ({"error": ["first", "second"]}, "first"),
+        ({"error": [], "message": "m"}, "m"),
+        ({"error": {"code": "QUOTA_LIMITED"}, "detail": "d"}, "d"),
+    ],
+)
+def test_vendor_reasons(body, detail):
+    """A4: the reason fields of the services added in 0.2.0."""
+    out = call(engines.brave, reply(body, 422), "q", 5, "k")
+    assert out["error"] == f"Brave: HTTP 422 {detail}"

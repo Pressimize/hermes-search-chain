@@ -2,12 +2,13 @@
 
 Run with the Python interpreter of a Hermes installation (isolated mode), e.g. Hermes Desktop on Windows:
 
-    <hermes python> -I scripts/live_check.py PROFILE [--break exa[,parallel]] [--pace 7.5] [QUERY ...]
+    <hermes python> -I scripts/live_check.py PROFILE [--break exa[,parallel,...]] [--pace 7.5] [QUERY ...]
 
 PROFILE   Hermes profile with the plugin installed, web.search_backend: search-chain and
           web.keyless_rescue: false. Its .env provides the keys. "default" is the Hermes home itself.
---break   replace these keys with an invalid value inside this process, so the stage answers HTTP 401
-          and the next stage has to serve.
+--break   replace the key of these stages with an invalid value inside this process, so the stage answers
+          with an error (usually HTTP 401) and the next stage has to serve; for searxng and degoog the address
+          is replaced with one where nothing listens, so the stage fails with a transport error.
 --pace    wait after each query in seconds (default 7.5: below 8 requests/min per provider).
 
 Hermes is found under %LOCALAPPDATA%/hermes, i.e. Hermes Desktop on Windows (override with HERMES_ROOT).
@@ -27,14 +28,26 @@ QUERIES = [
     "caddy reverse proxy websocket",
     "postgresql latest stable release",
 ]
-KEYS = {"exa": "EXA_API_KEY", "parallel": "PARALLEL_API_KEY", "firecrawl": "FIRECRAWL_API_KEY"}
+SETTINGS = {
+    "exa": "EXA_API_KEY",
+    "parallel": "PARALLEL_API_KEY",
+    "brave": "BRAVE_SEARCH_API_KEY",
+    "nimble": "NIMBLE_API_KEY",
+    "tavily": "TAVILY_API_KEY",
+    "youcom": "YDC_API_KEY",
+    "searxng": "SEARXNG_URL",
+    "degoog": "DEGOOG_URL",
+    "firecrawl": "FIRECRAWL_API_KEY",
+}
+BROKEN = {"SEARXNG_URL": "http://127.0.0.1:9", "DEGOOG_URL": "http://127.0.0.1:9"}  # nothing listens on port 9
+OTHER = ("SEARCH_CHAIN_ORDER", "SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS", "SEARCH_CHAIN_PARALLEL_API")
 
 
 def hermes_env(profile):
-    """Load Hermes for one profile; keys only from the profile's .env, not from the shell."""
+    """Load Hermes for one profile; keys and settings only from the profile's .env, not from the shell."""
     home = ROOT if profile == "default" else os.path.join(ROOT, "profiles", profile)
     os.environ["HERMES_HOME"] = home
-    for k in [k for k in os.environ if k.endswith("_API_KEY")]:
+    for k in [k for k in os.environ if k.endswith("_API_KEY") or k in (*SETTINGS.values(), *OTHER)]:
         os.environ.pop(k)
     sys.path.insert(0, os.path.join(ROOT, "hermes-agent"))
     import hermes_bootstrap  # noqa: F401
@@ -63,14 +76,15 @@ def main():
     parser.add_argument("queries", nargs="*")
     args = parser.parse_args()
     broken = [stage for stage in args.broken.split(",") if stage]
-    if unknown := [stage for stage in broken if stage not in KEYS]:
-        parser.error(f"--break: unknown stage {unknown[0]!r}, choose from {', '.join(KEYS)}")
+    if unknown := [stage for stage in broken if stage not in SETTINGS]:
+        parser.error(f"--break: unknown stage {unknown[0]!r}, choose from {', '.join(SETTINGS)}")
     if not 0 <= args.pace < 3600:
         parser.error("--pace must be a number of seconds from 0 to below 3600")
     sys.stdout.reconfigure(encoding="utf-8")
     hermes_env(args.profile)
     for stage in broken:
-        os.environ[KEYS[stage]] = "invalid-key-for-live-check"
+        setting = SETTINGS[stage]
+        os.environ[setting] = BROKEN.get(setting, "invalid-key-for-live-check")
 
     # Written against Hermes 0.21.6: these are internal names of Hermes and may move with an update.
     from agent.web_search_registry import get_provider
@@ -88,7 +102,7 @@ def main():
     logging.getLogger().addHandler(collect)
     logging.getLogger().setLevel(min(logging.getLogger().level or logging.INFO, logging.INFO))
 
-    counts = dict.fromkeys(KEYS, 0)
+    counts = dict.fromkeys(SETTINGS, 0)
     for query in args.queries or QUERIES:
         collect.lines = []
         start = time.time()
@@ -102,10 +116,10 @@ def main():
         # the plugin's INFO line (L1); the WARNING lines of S5 and L2 are left out
         info = [line for line in collect.lines if "paused for" not in line and "call failed" not in line]
         steps = info[-1].split(": ", 1)[1] if info else "(no log line: served from Hermes' cache?)"
-        for stage in KEYS:
-            if f"{stage}=" in steps and not any(f"{stage}={skip}" in steps for skip in ("no_key", "paused")):
+        for stage in SETTINGS:
+            if f"{stage}=" in steps and not any(f"{stage}={skip}" in steps for skip in ("no_key", "no_url", "paused")):
                 counts[stage] += 1
-        print(f"{duration:>5} s  {steps:<50} rows={len(rows)} chars={len(raw):>6}  "
+        print(f"{duration:>5} s  {steps:<60} rows={len(rows)} chars={len(raw):>6}  "
               f"{(data.get('error') or '')[:90]}", flush=True)  # fmt: skip
         time.sleep(args.pace)
     print("requests per provider:", counts)

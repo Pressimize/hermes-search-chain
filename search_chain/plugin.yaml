@@ -1,6 +1,6 @@
 name: search-chain
-version: 0.1.2
-description: "web_search fallback chain: Exa -> Parallel -> Firecrawl; moves on when a stage fails or its quota is used up"
+version: 0.2.0
+description: "web_search fallback chain over up to nine search services; moves on when a stage fails or its quota is used up"
 author: "Pressimize and Claude (Anthropic)"
 license: MIT
 homepage: "https://github.com/Pressimize/hermes-search-chain"
@@ -16,9 +16,29 @@ requires_env:
     description: "Parallel API key (stage 2, skipped if unset)"
     secret: true
   - name: FIRECRAWL_API_KEY
-    description: "Firecrawl API key (stage 3, skipped if unset)"
+    description: "Firecrawl API key (stage 9, skipped if unset)"
     secret: true
 optional_env:
+  - name: BRAVE_SEARCH_API_KEY
+    description: "Brave Search API key (stage 3, skipped if unset)"
+    secret: true
+  - name: NIMBLE_API_KEY
+    description: "Nimble API key (stage 4, skipped if unset)"
+    secret: true
+  - name: TAVILY_API_KEY
+    description: "Tavily API key (stage 5, skipped if unset)"
+    secret: true
+  - name: YDC_API_KEY
+    description: "You.com API key (stage 6, skipped if unset)"
+    secret: true
+  - name: SEARXNG_URL
+    description: "Address of your SearXNG instance with JSON output enabled (stage 7, skipped if unset)"
+    secret: true
+  - name: DEGOOG_URL
+    description: "Address of your Degoog instance (stage 8, skipped if unset)"
+    secret: true
+  - name: SEARCH_CHAIN_ORDER
+    description: "Stages to use, in order, comma-separated (default exa,parallel,brave,nimble,tavily,youcom,searxng,degoog,firecrawl)"
   - name: SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS
     description: "Characters of Exa highlights per result (default 600; 0 uses Exa's default)"
   - name: SEARCH_CHAIN_PARALLEL_API

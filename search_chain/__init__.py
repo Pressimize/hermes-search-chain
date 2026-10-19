@@ -1,4 +1,5 @@
-"""Hermes plugin: web_search fallback chain Exa -> Parallel -> Firecrawl."""
+"""Hermes plugin: web_search fallback chain over up to nine search services (Exa, Parallel, Brave, Nimble, Tavily,
+You.com, SearXNG, Degoog, Firecrawl)."""
 
 
 def register(ctx) -> None:
