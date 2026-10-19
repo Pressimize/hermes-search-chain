@@ -1,6 +1,6 @@
 # Evaluation: how the providers were chosen
 
-The chain Exa → Parallel → Firecrawl is the result of four steps taken on 2026-10-09 and 2026-10-10 with Hermes Agent 0.21.6:
+Since 0.2.0 the chain has nine stages: Exa → Parallel → Brave → Nimble → Tavily → You.com → SearXNG → Degoog → Firecrawl. Their order rests on *Benchmark v2* (2026-10-18/19) below. The earlier chain Exa → Parallel → Firecrawl is the result of four steps taken on 2026-10-09 and 2026-10-10 with Hermes Agent 0.21.6; that decision stays here as history, and its numbers still hold for Exa, Parallel and Firecrawl:
 
 1. **Run 1 – provider comparison:** seven search providers exactly as Hermes calls them, 60 queries, without an LLM.
 2. **Run 2 – mode comparison:** the same providers (Firecrawl only on the 20 added queries) plus 13 variants that use better modes or parameters of their APIs, 80 queries, without an LLM.
@@ -167,7 +167,82 @@ As read on the vendors' pages on 2026-10-09 and 2026-10-10; check them before re
 | Parallel | $1 to $5 per 1,000 by mode (`advanced` $5); the beta mode `agentic` is no longer priced in the documentation | 5,000 requests per month according to the pricing page; the pricing documentation does not mention a free allowance | up to 5,000 | 600 per minute |
 | Firecrawl | 2 credits per 10 results | 1,000 credits per month, shared with scraping | 500 | 10 searches per minute on the free plan |
 
+## Benchmark v2 (2026-10-18/19)
+
+A second, broader benchmark for the stages added in 0.2.0. It is a different test from runs 1 and 2: more queries, other topics, and a judged answer score. Its raw data (queries, snippets, judgments) is not published. The numbers below are the totals.
+
+**Method**
+
+- **177 queries in six categories:** H current events (38), I false premise (15), J SimpleQA-style facts (29), K German and niche topics (40), L the earlier queries of runs 1 and 2 (30), M agent queries (25). The queries of category M are real requests and stay private; only the count is given here.
+- **No LLM in the search.** Every provider was called with the adapter closest to what a plugin would do, and the first five results were scored.
+- **Two scores.** *Hit@5:* the expected domain is among the first five results. *Answer in a snippet:* two independent LLM judges decided whether the answer to the question stands clearly in a result snippet (score 2 of 0 to 2). The providers were hidden from the judges and shuffled per query. A third judge decided where the two disagreed. Cohen's kappa between the first two: 0.88 (three levels) and 0.92 (answer clearly present, yes or no). For 8 queries of category M there is no single answer, and the judges rated fit instead.
+- **Statistics.** McNemar tests on pairs of providers, Holm-corrected over 78 pairs.
+
+**Result per provider** (first run, 7.5 s between requests; of 177)
+
+| Provider | Hit@5 | Answer in a snippet | Errors | Time per search, median |
+|---|---|---|---|---|
+| Exa | 134 | 151 | 0 | 3.3 s |
+| Tavily | 85 | 143 | 0 | 2.4 s |
+| Brave | 105 | 140 | 0 | 0.9 s |
+| Firecrawl | 113 | 138 | 0 | 1.0 s |
+| Parallel | 118 | 137 | 0 | 3.0 s |
+| Nimble | 102 | 135 | 1 | 2.1 s |
+| You.com | 109 | 121 | 0 | 0.8 s |
+| Keenable | 70 | 124 | 0 | 0.4 s |
+| Bright Data SERP (139 queries only) | 62 | 71 | 23 | 6.3 s |
+
+Tavily returns long snippets: few hits on the expected domain, but the answer is often in the snippet. Which of the two scores matters depends on whether the model answers from the snippets or fetches the hits afterwards.
+
+**Self-hosted search, re-measured.** In the first run the self-hosted services ran at the same time with 7.5 s between requests, and the upstream engines (DuckDuckGo, Google, Brave) blocked the home address during the run. The re-measurement ran the services one at a time, 45 s between requests, each container freshly started (the condition of a stage that is asked rarely), on the same 177 queries and with the same judging procedure. Two hidden anchors from the first run (Exa, Brave) calibrated the new judgments: Exa 150 to 151 and Brave 138 to 140, so the new numbers stand next to the old ones without conversion. Kappa 0.81 (three levels) and 0.85 (yes or no) in n1, 0.85 and 0.90 in n2. Judgments agreed on over 88 % of the queries between n1 and n2.
+
+| Service | Answer, first run | Answer n1 | Answer n2 | Hit@5, first run | Hit@5 n1 | Hit@5 n2 |
+|---|---|---|---|---|---|---|
+| DonSeTch | 53 | 133 | 134 | 58 | 83 | 87 |
+| SearXNG | 127 | 131 | 131 | 96 | 105 | 101 |
+| Degoog | 116 | 124 | 120 | 114 | 113 | 113 |
+| YaCy | 3 | 5 (n1 only) | | 28 | 30 | |
+
+n2 repeated n1 with another query order and freshly started containers. The differences between n1 and n2 are at most 4 queries on both scores and not significant (p 0.5 to 1.0 on the answer). The self-hosted services stayed stable over the whole run. The hits came almost only through DuckDuckGo, Bing, Yahoo and Startpage; Brave, Google and Qwant stayed blocked in SearXNG.
+
+**Hermes' keyless ring**, called as Hermes calls it, n1, 30 s between requests per service (answer in a snippet; Hit@5 in brackets):
+
+| Service without a key | Answer | Note |
+|---|---|---|
+| Exa | 150 (133) | never rate-limited; equal to Exa with a key (151, 134) |
+| Keenable | 133 (75) | |
+| Parallel | 129 (94) | |
+| Firecrawl | 79 (64) | 78 of 177 replies were HTTP 429, 44 % |
+| YaCy (peer network, not part of the ring) | 5 (30) | |
+
+Taking the four ring services in turn gives about 92 queries with the expected domain in the top five, against 105 for Brave.
+
+**What is significant**
+
+- *First run, Hit@5:* Exa is ahead of all providers except Parallel and Degoog (against Firecrawl +12 percentage points, Brave +16, You.com +14). Parallel is ahead of Tavily, SearXNG and Keenable, and not distinguishable from Firecrawl, Brave, You.com, Nimble and Degoog.
+- *First run, answer in a snippet:* Exa is ahead of You.com, Keenable, SearXNG and Degoog, and not distinguishable from Tavily, Brave, Firecrawl, Parallel and Nimble (the smallest difference this test could detect is about 7 percentage points). Brave is ahead of You.com and Degoog.
+- *Re-measurement, answer* (exact McNemar test, not Holm-corrected, so read p values near 0.05 with care): DonSeTch and SearXNG are not distinguishable from Brave, Tavily, Firecrawl, Nimble and Parallel (p 0.05 to 1.0 in n1, 0.08 to 1.0 in n2) and are below Exa (n2: p 0.008 and 0.001). Degoog is below Brave, Tavily, Exa, Parallel, Firecrawl and Nimble (n2: p 0.001 to 0.01) and below DonSeTch. Exa without a key is ahead of Nimble (p 0.02).
+
+**What follows**
+
+- **The order** (design D17): Exa, Parallel, then the services with a key, then the self-hosted ones, Firecrawl last. From the third stage on the answer rates of Brave, Nimble, Tavily and SearXNG do not differ significantly, so reliability and cost decide; Exa and Parallel never failed in the benchmark, so the later stages are asked rarely.
+- **No quality check for self-hosted replies** (design D18): SearXNG with five or more unresponsive engines still had the answer in a snippet for 57 to 69 % of the queries, against 72 to 74 % overall, so the engine count does not rank the replies.
+- **Not adopted** (design D21): DonSeTch (no HTTP interface), Exa without a key (its terms can be read to forbid it as a replacement for a used-up quota), Hermes' keyless ring as a whole (Firecrawl part rate-limited on 44 % of queries), YaCy (5 of 177).
+
+**Limits of the benchmark**
+
+- One first run per provider, one repetition for the self-hosted services. Differences of a few queries between two providers are noise; only the paired tests count.
+- The providers ran at different times: Firecrawl, Parallel, Exa and Tavily 12 to 30 hours after the others. For current events this can shift the comparison.
+- The self-hosted services ran from a home connection, the others from their own networks; the same holds for the hosts that will use the self-hosted stages.
+- Snippets were judged, not the final answer of a model. A model that fetches the page can do better or worse.
+- The ground truth was corrected after the first run, on the page itself and for all providers alike. One answer the third judge doubted (H40) affects all providers equally.
+- Category M consists of real requests of one set of agents and may not resemble yours.
+
 ## Decision
+
+**0.2.0:** the order, its reasons and what was left out are decisions D17 to D21 in [design.md](design.md); *Benchmark v2* above holds the numbers. The decision for 0.1.x follows as history.
+
+**0.1.x:**
 
 - **Exa first.** Best or tied for best in both runs (run 1, with result pages: 55 of 55; run 2, result list: 73 of 75), with the current version in the snippet for all 16 version questions of run 2. With highlights capped it returns about half the text of Parallel for the same hits (about as little as Firecrawl), and inside Hermes it was the faster of the two (1.8 s against 3.0 s per search, [validation.md](validation.md)). Being first, it is also the first to use up its free allowance, which is smaller than Parallel's; the chain then carries on with Parallel.
 - **Parallel second.** Not distinguishable from Exa on the hits (run 1, with result pages: 53 of 55; run 2, result list: 72 of 75), also 16 of 16 on current versions, with the largest free allowance of the three. It is called on the beta endpoint in mode `agentic`, as Hermes does: this call was never worse than `/v1/search` in two tests ([design.md](design.md), D2).
@@ -178,7 +253,7 @@ As read on the vendors' pages on 2026-10-09 and 2026-10-10; check them before re
 
 ## Limits of this evaluation
 
-- One run per configuration, two days, 75 scored queries on technical topics, mostly in English. Only large gaps are firm; the ranking within the top three is not.
+- Runs 1 and 2: one run per configuration, two days, 75 scored queries on technical topics, mostly in English. Only large gaps are firm; the ranking within the top three is not.
 - Providers change their indexes and defaults; the numbers describe October 2026.
 - Run 1 and run 2 measure the result list, not what a model makes of it. The end-to-end test in [validation.md](validation.md) does, on a smaller set.
 - TinyFish's `purpose` was not measured (cache, see above).

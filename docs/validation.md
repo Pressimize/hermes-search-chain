@@ -5,15 +5,15 @@ How the plugin was checked against [design.md](design.md). Requirement IDs refer
 | Check | Result |
 |---|---|
 | T1 Unit tests | nothing leaves the machine |
-| T2 Live check through Hermes | Exa serves; with broken keys Parallel and Firecrawl serve |
-| T3 Reviews | two reviews against the design, findings fixed; three external code reviews of v0.1.0, adopted in v0.1.1; a review by seven models and a mutation run before v0.1.2 |
+| T2 Live check through Hermes | Exa serves; with broken keys each of the seven stages after Parallel serves once (0.2.0) |
+| T3 Reviews | two reviews against the design, findings fixed; three external code reviews of v0.1.0, adopted in v0.1.1; a review by seven models and a mutation run before v0.1.2; for 0.2.0 reviews of the specification, the plan and the code, and a mutation run |
 | T4 Lint and CI | clean; Python 3.11 and 3.14 |
-| T5 End-to-end test with a model | 144 runs without a failure; 34 to 36 of 36 answers correct in every setup |
-| Not verified | a really used-up quota (HTTP 402 and the 24-hour pause) |
+| T5 End-to-end test with a model | 0.1.0: 144 runs without a failure; 34 to 36 of 36 answers correct in every setup |
+| Not verified | a really used-up quota (HTTP 402, Tavily's 432/433, and the 24-hour pause) |
 
 ## T1 – Unit tests
 
-`uv run pytest` runs the unit tests with `httpx.MockTransport`; Hermes is replaced by a stand-in with the same abstract members. They cover every branch of the chain (K2–K7), including all stages paused or without a key, `register(ctx)` and `plugin.yaml` (S1), the properties and `is_available` (S2), keys absent from results and logs (S3), no exception escaping (S5), the pauses with an injected clock (K5), both Parallel calls and both settings (A1, A2), error texts, key masking and timeouts (A0, A4), the result shape, the URL rule and the text bounds (S4), the bounds of `limit` (A6), interrupts (S6), the proxy variables (A5) and the log lines (L1, L2).
+`uv run pytest` runs the unit tests with `httpx.MockTransport`; Hermes is replaced by a stand-in with the same abstract members. They cover every branch of the chain (K2–K7), including all stages paused or without a key, `register(ctx)` and `plugin.yaml` (S1), the properties and `is_available` (S2), keys absent from results and logs (S3), no exception escaping (S5), the pauses with an injected clock (K5), both Parallel calls and both settings (A1, A2), error texts, key masking and timeouts (A0, A4), the result shape, the URL rule and the text bounds (S4), the bounds of `limit` (A6), interrupts (S6), the proxy variables (A5) and the log lines (L1, L2). Since 0.2.0 also every request and reply shape of the six added stages (A7–A12), the address rules of the self-hosted stages (A13), the order setting with its warning (K8), the error text without unconfigured stages (K6) and the pauses per address and after 432/433 (K5).
 
 ## T2 – Live check through Hermes
 
@@ -26,6 +26,21 @@ How the plugin was checked against [design.md](design.md). Requirement IDs refer
 | `--break exa,parallel`, one query | `exa=http_401 parallel=http_401 firecrawl=ok` | 5 | 2.7 s |
 
 An invalid key (HTTP 401) starts no pause, so every call tries the stage again; that is intended (design D4).
+
+**0.2.0**, run on 2026-10-19 with Hermes Desktop 0.21.6 in a throwaway profile with keys for all seven keyed services and local SearXNG and Degoog instances (the containers of the benchmark), one query per row, the stages broken one after another with `--break`:
+
+| `--break` | Log line of the plugin (stages before the serving one) | Rows | Time |
+|---|---|---|---|
+| none | `exa=ok` | 5 | 2.5 s |
+| `exa,parallel` | `exa=http_401 parallel=http_401 brave=ok` | 5 | 2.6 s |
+| + `brave` | `... brave=http_422 nimble=ok` | 5 | 3.4 s |
+| + `nimble` | `... nimble=http_401 tavily=ok` | 5 | 4.4 s |
+| + `tavily` | `... tavily=http_401 youcom=ok` | 5 | 3.2 s |
+| + `youcom` | `... youcom=http_403 searxng=ok` | 5 | 3.6 s |
+| + `searxng` (address with nothing listening) | `... searxng=ConnectError degoog=ok` | 5 | 5.8 s |
+| + `degoog` | `... degoog=ConnectError firecrawl=ok` | 5 | 8.3 s |
+
+Each stage served once through Hermes' real tool path. An invalid key gives HTTP 401 at Exa, Parallel, Nimble and Tavily, HTTP 422 at Brave and HTTP 403 at You.com; none of these starts a pause.
 
 ## T3 – Reviews
 
@@ -131,4 +146,4 @@ Input tokens by kind of question (sum):
 
 ## Not verified
 
-A really used-up quota: the HTTP 402 reply and the 24-hour pause are covered by unit tests only. Exa documents the reply (`NO_MORE_CREDITS`); Parallel does not document its reply at all. Expected in use, not observed so far: `exa=http_402 parallel=ok` once, then `exa=paused parallel=ok`.
+A really used-up quota: the HTTP 402 reply (and Tavily's 432 and 433) and the 24-hour pause are covered by unit tests only. For 0.2.0 also unverified: how Brave reports a used-up monthly credit (most likely HTTP 429 with `QUOTA_LIMITED`, which pauses Brave for a minute), and Nimble's error bodies, which Nimble does not document. Exa documents the reply (`NO_MORE_CREDITS`); Parallel does not document its reply at all. Expected in use, not observed so far: `exa=http_402 parallel=ok` once, then `exa=paused parallel=ok`.

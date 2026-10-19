@@ -1,14 +1,15 @@
-"""REST calls to Exa, Parallel and Firecrawl search (design section 6).
+"""REST calls to the search services of the chain (design section 6).
 
 Every function returns a dict and never raises: ``{"rows": [...]}`` for a valid reply (possibly without rows),
 else ``{"error": "<Provider>: <detail>", "code": "<short code>", "status": <HTTP status or None>}``.
+For SearXNG and Degoog the ``key`` argument is the address of the user's instance (A13).
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -17,10 +18,20 @@ PARALLEL_URL = "https://api.parallel.ai/v1beta/search"  # A2, D2: the call Herme
 PARALLEL_BETA = "search-extract-2025-10-10"
 PARALLEL_V1_URL = "https://api.parallel.ai/v1/search"
 FIRECRAWL_URL = "https://api.firecrawl.dev/v2/search"
+BRAVE_URL = "https://api.search.brave.com/res/v1/web/search"
+NIMBLE_URL = "https://sdk.nimbleway.com/v2/search"
+TAVILY_URL = "https://api.tavily.com/search"
+YOUCOM_URL = "https://ydc-index.io/v1/search"
 
 # A0: timeout per request in seconds (httpx applies it to each phase).
 EXA_TIMEOUT = 10.0
 PARALLEL_TIMEOUT = 15.0
+BRAVE_TIMEOUT = 10.0
+NIMBLE_TIMEOUT = 15.0
+TAVILY_TIMEOUT = 15.0
+YOUCOM_TIMEOUT = 10.0
+SEARXNG_TIMEOUT = 15.0
+DEGOOG_TIMEOUT = 10.0
 FIRECRAWL_TIMEOUT = 15.0
 ERROR_MAX = 200  # A4
 ERROR_SCAN = 2000  # A4: only this many characters of a reply are cleaned up for the error text
@@ -49,10 +60,16 @@ def _malformed(provider: str, key: str) -> dict:
 def _reason(body: object) -> str:
     """A4: the vendor's own reason in a JSON body, or ""."""
     if isinstance(body, dict):
-        for field in ("tag", "error", "message"):
+        for field in ("tag", "error", "message", "detail"):
             value = body.get(field)
-            if isinstance(value, dict):
-                value = value.get("message")
+            if isinstance(value, list):  # e.g. Tavily's validation errors: [{"msg": ...}, ...]
+                value = value[0] if value else None
+                if isinstance(value, dict):
+                    value = value.get("msg")
+            elif isinstance(value, dict):  # e.g. Brave {"error": {"detail": ...}}, Tavily {"detail": {"error": ...}}
+                value = next(
+                    (v for k in ("message", "detail", "error") if isinstance(v := value.get(k), str) and v), ""
+                )
             if value:
                 return str(value)
     return ""
@@ -67,13 +84,11 @@ def _detail(response: httpx.Response) -> str:
     return _reason(body) or response.text.strip()
 
 
-def _post(
-    client: httpx.Client, provider: str, url: str, key: str, timeout: float, headers: dict, body: dict
-) -> tuple[dict | None, dict | None]:
+def _send(provider: str, key: str, send: Callable[[], httpx.Response]) -> tuple[dict | None, dict | None]:
     """(JSON object of a 2xx reply, None) or (None, error dict)."""
     try:
         try:
-            response = client.post(url, json=body, headers=headers, timeout=timeout)
+            response = send()
         except ValueError as exc:  # e.g. a key or query httpx cannot encode: no reply was read (A4)
             return None, _error(provider, type(exc).__name__, type(exc).__name__, key)
         if not 200 <= response.status_code < 300:
@@ -84,34 +99,56 @@ def _post(
         return None, _error(provider, "timeout", "timeout", key)
     except (ValueError, RecursionError):  # not JSON, or nested too deeply to parse
         return None, _malformed(provider, key)
-    except Exception as exc:  # transport errors
+    except Exception as exc:  # transport errors; only the class name, never the text (A13: it may hold an address)
         return None, _error(provider, type(exc).__name__, type(exc).__name__, key)
     if not isinstance(data, dict):
         return None, _malformed(provider, key)
     return data, None
 
 
+def _post(
+    client: httpx.Client, provider: str, url: str, key: str, timeout: float, headers: dict, body: dict
+) -> tuple[dict | None, dict | None]:
+    return _send(provider, key, lambda: client.post(url, json=body, headers=headers, timeout=timeout))
+
+
+def _get(
+    client: httpx.Client, provider: str, url: str, key: str, timeout: float, headers: dict, params: dict
+) -> tuple[dict | None, dict | None]:
+    return _send(provider, key, lambda: client.get(url, params=params, headers=headers, timeout=timeout))
+
+
 def _str(value: object) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _rows(provider: str, key: str, items: object, text: Callable[[dict], str], text_max: int = TEXT_MAX) -> dict:
+def _rows(
+    provider: str,
+    key: str,
+    items: object,
+    text: Callable[[dict], str],
+    text_max: int = TEXT_MAX,
+    limit: int | None = None,
+    clean: Callable[[str], str] | None = None,
+) -> dict:
     """S4: rows in Hermes' key order, numbered from 1; an item without an http(s) URL is dropped.
-    ``text`` builds the description of one item, cut to ``text_max`` characters."""
+    ``text`` builds the description of one item, cut to ``text_max`` characters; ``limit`` keeps the first rows;
+    ``clean`` is applied to title and description before they are cut."""
     if items is None:
         items = []
     if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
         return _malformed(provider, key)
     hits = [item for item in items if _str(item.get("url")).lower().startswith(("http://", "https://"))]
+    clean = clean or (lambda value: value)
     return {
         "rows": [
             {
                 "url": item["url"],
-                "title": _str(item.get("title"))[:TITLE_MAX],
-                "description": text(item)[:text_max],
+                "title": clean(_str(item.get("title")))[:TITLE_MAX],
+                "description": clean(text(item))[:text_max],
                 "position": position,
             }
-            for position, item in enumerate(hits, 1)
+            for position, item in enumerate(hits[:limit], 1)
         ]
     }
 
@@ -122,6 +159,27 @@ def _joined(field: str) -> Callable[[dict], str]:
         return " ".join(part for part in parts if isinstance(part, str)) if isinstance(parts, list) else ""
 
     return text
+
+
+def _field(field: str) -> Callable[[dict], str]:
+    return lambda item: _str(item.get(field))
+
+
+def _base(provider: str, value: str) -> tuple[str | None, dict | None]:
+    """A13: the address of a self-hosted instance without trailing slashes, or a ``bad_url`` error."""
+    base = value.rstrip("/")
+    try:
+        parts = urlsplit(base)
+        parts.port  # noqa: B018 - raises ValueError for a port that is no number or out of range
+    except ValueError:
+        parts = None
+    valid = (
+        parts is not None
+        and parts.scheme in ("http", "https")
+        and bool(parts.hostname)
+        and not any(c in "?#" or c.isspace() or not c.isprintable() for c in base)
+    )
+    return (base, None) if valid else (None, _error(provider, "invalid URL setting", "bad_url", ""))
 
 
 def exa(client: httpx.Client, query: str, limit: int, key: str, highlight_chars: int = EXA_HIGHLIGHT_CHARS) -> dict:
@@ -149,6 +207,77 @@ def parallel(client: httpx.Client, query: str, limit: int, key: str, v1: bool = 
         body = {"search_queries": [query], "objective": query, "mode": "agentic", "max_results": results}
     data, error = _post(client, "Parallel", url, key, PARALLEL_TIMEOUT, headers, body)
     return error or _rows("Parallel", key, data.get("results"), _joined("excerpts"))
+
+
+def _no_strong(text: str) -> str:
+    return re.sub(r"</?strong>", "", text, flags=re.IGNORECASE)
+
+
+def brave(client: httpx.Client, query: str, limit: int, key: str) -> dict:
+    """A7: Brave marks query words with <strong>; the tags are removed before the cut."""
+    headers = {"X-Subscription-Token": key, "Accept": "application/json"}
+    data, error = _get(client, "Brave", BRAVE_URL, key, BRAVE_TIMEOUT, headers, {"q": query, "count": limit})
+    if error:
+        return error
+    web = data.get("web")
+    if web is None:  # a reply without a web section is a valid reply without hits
+        return {"rows": []}
+    if not isinstance(web, dict):
+        return _malformed("Brave", key)
+    return _rows("Brave", key, web.get("results"), _field("description"), limit=limit, clean=_no_strong)
+
+
+def nimble(client: httpx.Client, query: str, limit: int, key: str) -> dict:
+    """A8."""
+    body = {"query": query, "search_depth": "lite", "focus": "general", "full_content": False, "max_results": limit}
+    headers = {"Authorization": f"Bearer {key}"}
+    data, error = _post(client, "Nimble", NIMBLE_URL, key, NIMBLE_TIMEOUT, headers, body)
+    return error or _rows("Nimble", key, data.get("results"), _field("description"), limit=limit)
+
+
+def tavily(client: httpx.Client, query: str, limit: int, key: str) -> dict:
+    """A9."""
+    body = {"query": query, "search_depth": "basic", "max_results": limit, "include_answer": False}
+    headers = {"Authorization": f"Bearer {key}"}
+    data, error = _post(client, "Tavily", TAVILY_URL, key, TAVILY_TIMEOUT, headers, body)
+    return error or _rows("Tavily", key, data.get("results"), _field("content"), limit=limit)
+
+
+def _youcom_text(item: dict) -> str:
+    snippets = item.get("snippets")
+    parts = [_str(item.get("description"))] + (snippets if isinstance(snippets, list) else [])
+    return " ".join(part for part in parts if isinstance(part, str) and part)
+
+
+def youcom(client: httpx.Client, query: str, limit: int, key: str) -> dict:
+    """A10: ``count`` applies per section (web, news); only web results are used."""
+    body = {"query": query, "count": limit}
+    data, error = _post(client, "You.com", YOUCOM_URL, key, YOUCOM_TIMEOUT, {"X-API-Key": key}, body)
+    if error:
+        return error
+    results = data.get("results")
+    if not isinstance(results, dict):
+        return _malformed("You.com", key)
+    return _rows("You.com", key, results.get("web"), _youcom_text, limit=limit)
+
+
+def searxng(client: httpx.Client, query: str, limit: int, key: str) -> dict:
+    """A11: ``key`` is the instance address; results in the order the instance sends them."""
+    base, error = _base("SearXNG", key)
+    if error:
+        return error
+    params = {"q": query, "format": "json"}
+    data, error = _get(client, "SearXNG", f"{base}/search", base, SEARXNG_TIMEOUT, {}, params)
+    return error or _rows("SearXNG", base, data.get("results"), _field("content"), limit=limit)
+
+
+def degoog(client: httpx.Client, query: str, limit: int, key: str) -> dict:
+    """A12: ``key`` is the instance address; results in the order the instance sends them."""
+    base, error = _base("Degoog", key)
+    if error:
+        return error
+    data, error = _get(client, "Degoog", f"{base}/api/search", base, DEGOOG_TIMEOUT, {}, {"q": query})
+    return error or _rows("Degoog", base, data.get("results"), _field("snippet"), limit=limit)
 
 
 def firecrawl(client: httpx.Client, query: str, limit: int, key: str) -> dict:

@@ -44,6 +44,14 @@ sys.modules.setdefault("agent", types.ModuleType("agent"))
 sys.modules["agent.web_search_provider"] = _module
 
 KEYS = {"EXA_API_KEY": "exa-SECRET", "PARALLEL_API_KEY": "par-SECRET", "FIRECRAWL_API_KEY": "fc-SECRET"}
+MORE = {
+    "BRAVE_SEARCH_API_KEY": "brave-SECRET",
+    "NIMBLE_API_KEY": "nimble-SECRET",
+    "TAVILY_API_KEY": "tavily-SECRET",
+    "YDC_API_KEY": "ydc-SECRET",
+    "SEARXNG_URL": "http://searx.test",
+    "DEGOOG_URL": "http://degoog.test",
+}
 
 
 @pytest.fixture
@@ -53,3 +61,20 @@ def env():
     ENV.update(KEYS)
     yield ENV
     ENV.clear()
+
+
+@pytest.fixture
+def all_stages(env):
+    """Keys and addresses for all nine stages."""
+    env.update(MORE)
+    return env
+
+
+@pytest.fixture(autouse=True)
+def fresh_warnings():
+    """K8: the order warning is once per process; every test starts without it."""
+    from search_chain import provider
+
+    provider._warned.clear()
+    yield
+    provider._warned.clear()

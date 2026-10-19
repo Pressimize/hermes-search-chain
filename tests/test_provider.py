@@ -12,6 +12,10 @@ from search_chain import provider
 from search_chain.provider import SearchChainProvider
 
 EXA, PARALLEL, FIRECRAWL = "api.exa.ai", "api.parallel.ai", "api.firecrawl.dev"
+BRAVE, NIMBLE, TAVILY, YOUCOM = "api.search.brave.com", "sdk.nimbleway.com", "api.tavily.com", "ydc-index.io"
+SEARX, DEGOOG = "searx.test", "degoog.test"
+# the stages between Parallel and Firecrawl, when only the three keys of conftest.KEYS are set
+MID = "brave=no_key nimble=no_key tavily=no_key youcom=no_key searxng=no_url degoog=no_url"
 
 
 def exa_ok(request):
@@ -39,11 +43,38 @@ def timeout(request):
     raise httpx.ReadTimeout("slow", request=request)
 
 
-class Api:
-    """MockTransport handler for all three services; records requests."""
+def brave_ok(request):
+    return httpx.Response(200, json={"web": {"results": [{"url": "https://b.example/", "title": "B"}]}})
 
-    def __init__(self, exa=exa_ok, parallel=parallel_ok, firecrawl=firecrawl_ok):
-        self.handlers = {EXA: exa, PARALLEL: parallel, FIRECRAWL: firecrawl}
+
+def results_ok(title):
+    return lambda request: httpx.Response(200, json={"results": [{"url": f"https://{title}.example/", "title": title}]})
+
+
+NIMBLE_OK, TAVILY_OK, SEARX_OK, DEGOOG_OK = (results_ok(title) for title in "NTSD")
+
+
+def youcom_ok(request):
+    return httpx.Response(200, json={"results": {"web": [{"url": "https://y.example/", "title": "Y"}]}})
+
+
+class Api:
+    """MockTransport handler for all nine services; records requests."""
+
+    def __init__(
+        self,
+        exa=exa_ok,
+        parallel=parallel_ok,
+        firecrawl=firecrawl_ok,
+        brave=brave_ok,
+        nimble=NIMBLE_OK,
+        tavily=TAVILY_OK,
+        youcom=youcom_ok,
+        searxng=SEARX_OK,
+        degoog=DEGOOG_OK,
+    ):
+        self.handlers = {EXA: exa, PARALLEL: parallel, FIRECRAWL: firecrawl, BRAVE: brave, NIMBLE: nimble}
+        self.handlers.update({TAVILY: tavily, YOUCOM: youcom, SEARX: searxng, DEGOOG: degoog})
         self.requests = []
 
     def __call__(self, request):
@@ -90,7 +121,21 @@ def test_manifest_and_register():
     assert manifest["provides_web_providers"] == ["search-chain"]
     assert [e["name"] for e in manifest["requires_env"]] == ["EXA_API_KEY", "PARALLEL_API_KEY", "FIRECRAWL_API_KEY"]
     assert all(e["secret"] is True for e in manifest["requires_env"])
-    assert [e["name"] for e in manifest["optional_env"]] == [provider.HIGHLIGHT_SETTING, provider.PARALLEL_SETTING]
+    assert [e["name"] for e in manifest["optional_env"]] == [
+        "BRAVE_SEARCH_API_KEY",
+        "NIMBLE_API_KEY",
+        "TAVILY_API_KEY",
+        "YDC_API_KEY",
+        "SEARXNG_URL",
+        "DEGOOG_URL",
+        provider.ORDER_SETTING,
+        provider.HIGHLIGHT_SETTING,
+        provider.PARALLEL_SETTING,
+    ]
+    assert all(e.get("secret") is True for e in manifest["optional_env"][:6])  # keys, and addresses (A13)
+    assert not any(e.get("secret") for e in manifest["optional_env"][6:])
+    settings = [e["name"] for e in manifest["requires_env"] + manifest["optional_env"]]
+    assert all(setting in settings for _, _, setting, _, _ in provider.STAGES)
     assert not (Path(search_chain.__file__).parent / "pyproject.toml").exists()  # I3
 
     registered = []
@@ -112,7 +157,7 @@ def test_plugin_and_project_versions_agree():
 def test_properties(env):
     p = SearchChainProvider()
     assert p.name == "search-chain"
-    assert p.display_name == "Search chain (Exa, Parallel, Firecrawl)"
+    assert p.display_name == "Search chain"
     assert p.supports_search() is True and p.supports_extract() is False
 
 
@@ -173,7 +218,7 @@ def test_exa_and_parallel_failure_moves_on_to_firecrawl(env, logs):
     api = Api(exa=status(500), parallel=empty)
     assert served_by(chain(api).search("q")) == "F"
     assert api.hosts() == [EXA, PARALLEL, FIRECRAWL]  # K7: one request each
-    assert lines(logs) == ["search-chain: exa=http_500 parallel=empty firecrawl=ok"]
+    assert lines(logs) == [f"search-chain: exa=http_500 parallel=empty {MID} firecrawl=ok"]
 
 
 def test_missing_key_skips_the_stage_without_request(env, logs):
@@ -182,7 +227,7 @@ def test_missing_key_skips_the_stage_without_request(env, logs):
     api = Api()
     assert served_by(chain(api).search("q")) == "F"
     assert api.hosts() == [FIRECRAWL]
-    assert lines(logs) == ["search-chain: exa=no_key parallel=no_key firecrawl=ok"]
+    assert lines(logs) == [f"search-chain: exa=no_key parallel=no_key {MID} firecrawl=ok"]
 
 
 # --- K6 -------------------------------------------------------------------------------------------
@@ -198,12 +243,12 @@ def test_missing_key_skips_the_stage_without_request(env, logs):
                 "firecrawl": status(500, {"error": "boom"}),
             },
             "Exa: HTTP 402 NO_MORE_CREDITS; Parallel: timeout; Firecrawl: HTTP 500 boom",
-            "exa=http_402 parallel=timeout firecrawl=http_500",
+            f"exa=http_402 parallel=timeout {MID} firecrawl=http_500",
         ),
         (
             {"exa": status(500), "parallel": empty, "firecrawl": timeout},  # an empty reply among failures
             "Exa: HTTP 500 nope; Parallel: no results; Firecrawl: timeout",
-            "exa=http_500 parallel=empty firecrawl=timeout",
+            f"exa=http_500 parallel=empty {MID} firecrawl=timeout",
         ),
     ],
     ids=["failures", "failure-empty-failure"],
@@ -225,12 +270,9 @@ def test_no_results_anywhere_is_a_failure(env):
 def test_no_keys_at_all(env, logs):
     env.clear()
     api = Api()
-    assert chain(api).search("q") == {
-        "success": False,
-        "error": "search-chain: Exa: no API key; Parallel: no API key; Firecrawl: no API key",
-    }
+    assert chain(api).search("q") == {"success": False, "error": "search-chain: no stage configured"}  # K6
     assert api.hosts() == []
-    assert lines(logs) == ["search-chain: exa=no_key parallel=no_key firecrawl=no_key"]
+    assert lines(logs) == [f"search-chain: exa=no_key parallel=no_key {MID} firecrawl=no_key"]
 
 
 # --- K5 pauses ------------------------------------------------------------------------------------
@@ -329,10 +371,10 @@ def test_all_stages_paused_or_without_key(env, logs):
     assert result == {
         "success": False,
         "error": "search-chain: Exa: HTTP 402 NO_MORE_CREDITS (paused for another 24 h); "
-        "Parallel: HTTP 429 slow down (paused for another 1 min); Firecrawl: no API key",
+        "Parallel: HTTP 429 slow down (paused for another 1 min)",  # K6: Firecrawl without key is not named
     }
     assert api.hosts() == [EXA, PARALLEL]  # the second call sent nothing
-    assert lines(logs)[-1] == "search-chain: exa=paused parallel=paused firecrawl=no_key"
+    assert lines(logs)[-1] == f"search-chain: exa=paused parallel=paused {MID} firecrawl=no_key"
 
 
 @pytest.mark.parametrize(
@@ -357,9 +399,7 @@ def test_remaining_pause_in_the_error_text(env, after, left):
     p = chain(Api(exa=status(402, {"tag": "NO_MORE_CREDITS"})), clock)
     p.search("q")
     clock.now += after
-    assert p.search("q")["error"].startswith(
-        f"search-chain: Exa: HTTP 402 NO_MORE_CREDITS (paused for another {left});"
-    )
+    assert p.search("q")["error"] == f"search-chain: Exa: HTTP 402 NO_MORE_CREDITS (paused for another {left})"
 
 
 # --- A1 setting -----------------------------------------------------------------------------------
@@ -439,7 +479,7 @@ def test_unexpected_exception_becomes_a_failure(env, logs, monkeypatch):
     def boom(client, query, limit, key):
         raise RuntimeError("bug with exa-SECRET")
 
-    monkeypatch.setattr(provider, "STAGES", (("exa", "Exa", "EXA_API_KEY", boom),))
+    monkeypatch.setattr(provider, "STAGES", (("exa", "Exa", "EXA_API_KEY", boom, "key"),))
     assert chain(Api()).search("q") == {"success": False, "error": "search-chain: RuntimeError"}
     assert lines(logs, logging.WARNING) == ["search-chain: call failed: RuntimeError"]
     assert lines(logs) == ["search-chain: no stage ran"]  # L1
@@ -470,7 +510,7 @@ def test_proxy_variables_are_honoured(env, logs, monkeypatch):
     del env["PARALLEL_API_KEY"], env["FIRECRAWL_API_KEY"]
     result = SearchChainProvider().search("q")
     assert result["error"].startswith("search-chain: Exa: ConnectError")
-    assert lines(logs) == ["search-chain: exa=ConnectError parallel=no_key firecrawl=no_key"]
+    assert lines(logs) == [f"search-chain: exa=ConnectError parallel=no_key {MID} firecrawl=no_key"]
 
 
 # --- A6 limit, S4 query ---------------------------------------------------------------------------
@@ -492,3 +532,204 @@ def test_empty_query_asks_no_service(env, logs, query):
     assert api.requests == []
     assert lines(logs) == ["search-chain: empty_query"]
     assert lines(logs, logging.WARNING) == []
+
+
+# --- K1 nine stages, K8 order setting -------------------------------------------------------------
+
+ALL = [EXA, PARALLEL, BRAVE, NIMBLE, TAVILY, YOUCOM, SEARX, DEGOOG, FIRECRAWL]
+NAMES = ["exa", "parallel", "brave", "nimble", "tavily", "youcom", "searxng", "degoog", "firecrawl"]
+
+
+def youcom_empty(request):
+    return httpx.Response(200, json={"results": {"web": []}})
+
+
+def nothing(name):
+    """A valid reply without hits, in the shape of this stage."""
+    return youcom_empty if name == "youcom" else empty
+
+
+def none_serve():
+    return Api(**{name: nothing(name) for name in NAMES})
+
+
+def test_default_order_asks_all_nine_stages(all_stages, logs):
+    api = none_serve()
+    result = chain(api).search("q")
+    assert api.hosts() == ALL
+    assert lines(logs) == ["search-chain: " + " ".join(f"{name}=empty" for name in NAMES)]
+    assert result["error"] == "search-chain: " + "; ".join(
+        f"{name}: no results"
+        for name in ("Exa", "Parallel", "Brave", "Nimble", "Tavily", "You.com", "SearXNG", "Degoog", "Firecrawl")
+    )
+
+
+@pytest.mark.parametrize("serving", range(9))
+def test_each_stage_serves_when_the_ones_before_find_nothing(all_stages, serving):
+    api = Api(**{name: nothing(name) for name in NAMES[:serving]})
+    assert chain(api).search("q")["success"] is True
+    assert api.hosts() == ALL[: serving + 1]
+
+
+def test_order_setting_picks_and_orders_stages(all_stages, logs):
+    all_stages["SEARCH_CHAIN_ORDER"] = " SearXNG , exa,firecrawl,"
+    api = none_serve()
+    result = chain(api).search("q")
+    assert api.hosts() == [SEARX, EXA, FIRECRAWL]  # stages with a key but not named are not asked
+    assert lines(logs) == ["search-chain: searxng=empty exa=empty firecrawl=empty"]
+    assert result["error"] == "search-chain: SearXNG: no results; Exa: no results; Firecrawl: no results"
+    assert lines(logs, logging.WARNING) == []  # an empty entry is dropped without a warning
+
+
+@pytest.mark.parametrize(
+    ("value", "used"),
+    [
+        ("exa,bing,parallel", "exa,parallel"),
+        ("exa,EXA,parallel", "exa,parallel"),
+        ("bing", ",".join(NAMES)),
+        (",", ",".join(NAMES)),
+    ],
+)
+def test_unknown_or_repeated_names_are_dropped_with_one_warning(all_stages, logs, value, used):
+    all_stages["SEARCH_CHAIN_ORDER"] = value
+    api = none_serve()
+    p = chain(api)
+    p.search("q")
+    p.is_available()
+    p.search("q")
+    assert api.hosts() == 2 * [dict(zip(NAMES, ALL, strict=True))[name] for name in used.split(",")]
+    assert lines(logs, logging.WARNING) == [
+        f"search-chain: SEARCH_CHAIN_ORDER has unknown or repeated names; using {used}"
+    ]
+
+
+@pytest.mark.parametrize("value", [None, "", "  "])
+def test_unset_order_is_the_default_without_a_warning(all_stages, logs, value):
+    if value is not None:
+        all_stages["SEARCH_CHAIN_ORDER"] = value
+    api = none_serve()
+    chain(api).search("q")
+    assert api.hosts() == ALL
+    assert lines(logs, logging.WARNING) == []
+
+
+def test_order_without_a_configured_stage(env, logs):
+    """K8: a valid order whose stages have no key does not fall back to the default."""
+    env["SEARCH_CHAIN_ORDER"] = "brave,searxng"
+    api = Api()
+    p = chain(api)
+    assert p.is_available() is False  # Exa, Parallel and Firecrawl have keys, but are not in the order
+    assert p.search("q") == {"success": False, "error": "search-chain: no stage configured"}
+    assert api.hosts() == []
+    assert lines(logs) == ["search-chain: brave=no_key searxng=no_url"]
+
+
+def test_is_available_counts_an_address(env):
+    env.clear()
+    assert SearchChainProvider().is_available() is False
+    env["DEGOOG_URL"] = "/"  # nothing left after the slashes are cut
+    assert SearchChainProvider().is_available() is False
+    env["DEGOOG_URL"] = "http://degoog.test"
+    assert SearchChainProvider().is_available() is True
+
+
+def test_unconfigured_stages_are_left_out_of_the_error(env):
+    """K6: only stages that were asked or are paused are named."""
+    api = Api(exa=status(500), parallel=empty, firecrawl=timeout)
+    error = "search-chain: Exa: HTTP 500 nope; Parallel: no results; Firecrawl: timeout"
+    assert chain(api).search("q")["error"] == error
+
+
+@pytest.mark.parametrize("code", [432, 433])
+def test_tavily_quota_codes_pause_for_a_day(env, logs, code):
+    env["SEARCH_CHAIN_ORDER"] = "tavily,firecrawl"
+    env["TAVILY_API_KEY"] = "tavily-SECRET"
+    clock = Clock()
+    api = Api(tavily=status(code, {"detail": {"error": "limit"}}))
+    p = chain(api, clock)
+    assert served_by(p.search("q")) == "F"
+    assert lines(logs, logging.WARNING) == [f"search-chain: tavily paused for 86400 s (HTTP {code} limit)"]
+    clock.now += 86399
+    p.search("q")
+    assert api.hosts() == [TAVILY, FIRECRAWL, FIRECRAWL]
+
+
+def test_pause_belongs_to_the_address(env):
+    """K5, A13: a self-hosted stage pauses per address; trailing slashes do not make another address."""
+    env.clear()
+    env.update(SEARCH_CHAIN_ORDER="searxng", SEARXNG_URL="http://user:pw@searx.test/")
+    api = Api(searxng=status(429))
+    p = chain(api)
+    p.search("q")
+    env["SEARXNG_URL"] = "http://user:pw@searx.test//"
+    p.search("q")
+    assert api.hosts() == [SEARX]  # same instance: paused
+    assert "searx.test" not in repr(p._paused) and "pw" not in repr(p._paused)
+    env["SEARXNG_URL"] = "http://other.searx.test"
+    api.handlers["other.searx.test"] = status(429)
+    p.search("q")
+    assert api.hosts() == [SEARX, "other.searx.test"]
+
+
+def test_bad_address_fails_its_stage_every_time_without_a_pause(env, logs):
+    env["SEARXNG_URL"] = "searx.test"
+    env["SEARCH_CHAIN_ORDER"] = "searxng,exa"
+    api = Api()
+    p = chain(api)
+    for _ in range(2):
+        assert served_by(p.search("q")) == "E"
+    assert lines(logs) == ["search-chain: searxng=bad_url exa=ok"] * 2
+    assert p._paused == {}
+    env["EXA_API_KEY"] = ""
+    assert p.search("q")["error"] == "search-chain: SearXNG: invalid URL setting"
+
+
+def test_a_key_is_not_stripped_like_an_address(env):
+    env["EXA_API_KEY"] = "exa-key/"
+    api = Api()
+    chain(api).search("q")
+    assert api.requests[0].headers["x-api-key"] == "exa-key/"
+
+
+def test_new_keys_never_in_result_or_log(all_stages, logs):
+    def echo(request):
+        key = request.headers.get("x-api-key") or request.headers.get("x-subscription-token")
+        key = key or request.headers.get("authorization", "").removeprefix("Bearer ")
+        return httpx.Response(402, json={"error": f"key {key} has no credits"})
+
+    all_stages["SEARCH_CHAIN_ORDER"] = "brave,nimble,tavily,youcom"
+    result = chain(Api(brave=echo, nimble=echo, tavily=echo, youcom=echo)).search("q")
+    assert result["error"].count("[key]") == 4
+    for name in ("brave", "nimble", "tavily", "ydc"):
+        assert f"{name}-SECRET" not in json.dumps(result) and f"{name}-SECRET" not in logs.text
+
+
+# --- gaps found by the mutation run of 0.2.0 ------------------------------------------------------
+
+
+def test_pause_belongs_to_the_stage_as_well(env):
+    """K5: two stages with the same address do not share a pause."""
+    env.clear()
+    env.update(SEARXNG_URL="http://same.test", DEGOOG_URL="http://same.test")
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        return httpx.Response(402, json={"error": "x"}) if request.url.path == "/search" else empty(request)
+
+    chain(handler).search("q")
+    assert seen == ["/search", "/api/search"]  # Degoog is asked although SearXNG at the same address is paused
+
+
+def test_highlight_setting_needs_ascii_digits(env):
+    env["SEARCH_CHAIN_EXA_HIGHLIGHT_CHARS"] = "٣٠٠"  # 300 in Arabic-Indic digits
+    api = Api()
+    chain(api).search("q")
+    assert json.loads(api.requests[0].content)["contents"] == {"highlights": {"maxCharacters": 600}}
+
+
+def test_different_bad_orders_warn_only_once(all_stages, logs):
+    for value in ("foo", "bar"):
+        all_stages["SEARCH_CHAIN_ORDER"] = value
+        chain(none_serve()).search("q")
+    assert len(lines(logs, logging.WARNING)) == 1

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0 – 2026-10-19
+
+Six more stages and a setting for the order. Exa, Parallel and Firecrawl are called as before. Why this order: design D17 and [docs/evaluation.md](docs/evaluation.md), *Benchmark v2*.
+
+- The default chain is now Exa → Parallel → Brave → Nimble → Tavily → You.com → SearXNG → Degoog → Firecrawl. Brave, Nimble, Tavily and You.com need a key (`BRAVE_SEARCH_API_KEY`, `NIMBLE_API_KEY`, `TAVILY_API_KEY`, `YDC_API_KEY`), SearXNG and Degoog the address of your own instance (`SEARXNG_URL`, `DEGOOG_URL`). A stage without a key or address is skipped, so an existing setup behaves as before unless it already has one of these keys or addresses (next point).
+- A key that is already set switches its stage on: the names follow Hermes' built-in providers where there is one. This includes a `TAVILY_API_KEY` that was set only for hermes-extract-chain; Tavily search then spends those credits.
+- New setting `SEARCH_CHAIN_ORDER`: comma-separated stage names that pick the stages and their order. A stage left out is never asked, even with a key. Unknown and repeated names are dropped with one warning. If the order names no stage with a key or address, a search fails with `search-chain: no stage configured`.
+- The error text names only the stages that were asked or are paused. Before, a stage without a key was named, too (`no API key`); the log line still lists every stage. The log line has the stage names in the order used.
+- Tavily's HTTP 432 and 433 (plan limit, pay-as-you-go limit) pause the stage for 24 hours, like a 402.
+- Error reasons are also read from `detail` and from lists in the reply body, which the new services use. In rare shapes the reason of an Exa, Parallel or Firecrawl error can therefore read differently than before.
+- Addresses of self-hosted stages are checked (`http` or `https`, a host, no `?` or `#`); a bad one fails the stage with `invalid URL setting` and no request. Redirects are not followed. The address is never written to error texts or the log.
+- The display name is "Search chain" without a list of services.
+- `plugin.yaml` lists the new keys, addresses and `SEARCH_CHAIN_ORDER` as `optional_env`.
+- Developer script: `scripts/live_check.py --break` accepts all nine stages; for SearXNG and Degoog it replaces the address with one where nothing listens.
+- Documentation: README with the new stages, prices and settings; evaluation with the benchmark of 2026-10-18/19; design decisions D17 to D21.
+
 ## 0.1.2 – 2026-10-17
 
 Fixes from a review by seven models and from a mutation run, and alignment with hermes-extract-chain. The order of the chain, the pauses and the settings are unchanged.
