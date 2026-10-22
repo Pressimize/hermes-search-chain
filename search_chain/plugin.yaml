@@ -10,32 +10,32 @@ provides_web_providers:
   - search-chain
 requires_env:
   - name: EXA_API_KEY
-    description: "Exa API key (stage 1, skipped if unset)"
+    description: "Exa API key (stage 1 by default, skipped if unset)"
     secret: true
   - name: PARALLEL_API_KEY
-    description: "Parallel API key (stage 2, skipped if unset)"
+    description: "Parallel API key (stage 2 by default, skipped if unset)"
     secret: true
   - name: FIRECRAWL_API_KEY
-    description: "Firecrawl API key (stage 9, skipped if unset)"
+    description: "Firecrawl API key (stage 9 by default, skipped if unset)"
     secret: true
 optional_env:
   - name: BRAVE_SEARCH_API_KEY
-    description: "Brave Search API key (stage 3, skipped if unset)"
+    description: "Brave Search API key (stage 3 by default, skipped if unset)"
     secret: true
   - name: NIMBLE_API_KEY
-    description: "Nimble API key (stage 4, skipped if unset)"
+    description: "Nimble API key (stage 4 by default, skipped if unset)"
     secret: true
   - name: TAVILY_API_KEY
-    description: "Tavily API key (stage 5, skipped if unset)"
+    description: "Tavily API key (stage 5 by default, skipped if unset)"
     secret: true
   - name: YDC_API_KEY
-    description: "You.com API key (stage 6, skipped if unset)"
+    description: "You.com API key (stage 6 by default, skipped if unset)"
     secret: true
   - name: SEARXNG_URL
-    description: "Address of your SearXNG instance with JSON output enabled (stage 7, skipped if unset)"
+    description: "Address of your SearXNG instance with JSON output enabled (stage 7 by default, skipped if unset)"
     secret: true
   - name: DEGOOG_URL
-    description: "Address of your Degoog instance (stage 8, skipped if unset)"
+    description: "Address of your Degoog instance (stage 8 by default, skipped if unset)"
     secret: true
   - name: SEARCH_CHAIN_ORDER
     description: "Stages to use, in order, comma-separated (default exa,parallel,brave,nimble,tavily,youcom,searxng,degoog,firecrawl)"

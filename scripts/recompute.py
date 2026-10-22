@@ -1,4 +1,4 @@
-"""Recompute the headline numbers of docs/evaluation.md and docs/validation.md from the CSV files in data/.
+"""Recompute the headline numbers of docs/evaluation.md (runs 1 and 2) and docs/validation.md (T5) from data/.
 
     python scripts/recompute.py
 

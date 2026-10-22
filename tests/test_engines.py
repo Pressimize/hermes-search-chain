@@ -273,7 +273,7 @@ def test_api_error_plain_text(fn, name):
 
 @pytest.mark.parametrize(("fn", "name"), ALL)
 def test_api_error_json_without_a_known_field(fn, name):
-    """A4: without tag, error or message the response text is the detail."""
+    """A4: without tag, error, message or detail the response text is the detail."""
     out = call(fn, reply({"requestId": "r1", "status": "busy"}, 429), "q", 5, "k")
     assert out == {"error": f'{name}: HTTP 429 {{"requestId":"r1","status":"busy"}}', "code": "http_429", "status": 429}
 

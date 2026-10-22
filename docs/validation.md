@@ -5,10 +5,10 @@ How the plugin was checked against [design.md](design.md). Requirement IDs refer
 | Check | Result |
 |---|---|
 | T1 Unit tests | nothing leaves the machine |
-| T2 Live check through Hermes | Exa serves; with broken keys each of the seven stages after Parallel serves once (0.2.0) |
+| T2 Live check through Hermes | Exa serves; with broken keys each of the seven stages after Parallel serves once (0.2.0); Parallel served in the run of 0.1.x |
 | T3 Reviews | two reviews against the design, findings fixed; three external code reviews of v0.1.0, adopted in v0.1.1; a review by seven models and a mutation run before v0.1.2; for 0.2.0 reviews of the specification, the plan and the code, and a mutation run |
 | T4 Lint and CI | clean; Python 3.11 and 3.14 |
-| T5 End-to-end test with a model | 0.1.0: 144 runs without a failure; 34 to 36 of 36 answers correct in every setup |
+| T5 End-to-end test with a model | pre-release code of 0.1.0: 144 runs without a failure; 34 to 36 of 36 answers correct in every setup |
 | Not verified | a really used-up quota (HTTP 402, Tavily's 432/433, and the 24-hour pause) |
 
 ## T1 – Unit tests
@@ -17,7 +17,9 @@ How the plugin was checked against [design.md](design.md). Requirement IDs refer
 
 ## T2 – Live check through Hermes
 
-`scripts/live_check.py` calls Hermes' real `web_search` tool function in a profile with the plugin installed, without a model. Run on 2026-10-10 with Hermes Desktop 0.21.6:
+`scripts/live_check.py` calls Hermes' real `web_search` tool function in a profile with the plugin installed, without a model.
+
+**Three-stage chain of 0.1.x** (Exa → Parallel → Firecrawl), run on 2026-10-10 with Hermes Desktop 0.21.6:
 
 | Mode | Log line of the plugin | Rows | Time per search |
 |---|---|---|---|
@@ -40,9 +42,11 @@ An invalid key (HTTP 401) starts no pause, so every call tries the stage again; 
 | + `searxng` (address with nothing listening) | `... searxng=ConnectError degoog=ok` | 5 | 5.8 s |
 | + `degoog` | `... degoog=ConnectError firecrawl=ok` | 5 | 8.3 s |
 
-Each stage served once through Hermes' real tool path. An invalid key gives HTTP 401 at Exa, Parallel, Nimble and Tavily, HTTP 422 at Brave and HTTP 403 at You.com; none of these starts a pause.
+Every stage except Parallel served once through Hermes' real tool path; Parallel was broken together with Exa here and served in the run of 0.1.x above, and its call did not change in 0.2.0. An invalid key gives HTTP 401 at Exa, Parallel, Nimble and Tavily, HTTP 422 at Brave and HTTP 403 at You.com; none of these starts a pause.
 
 ## T3 – Reviews
+
+The first four points concern the development of 0.1.0.
 
 - **Plan against design, before coding.** Taken over: no empty success (K6), pauses only after HTTP 402 and 429 (K5), and a live check that refuses to run while the keyless rescue is on.
 - **Code against design, after coding,** by an independent reviewer who also ran 21 single-line mutations of the code against the tests (19 caught). It found one real bug (a setting value longer than Python's integer-parsing limit failed the whole call) and three gaps (results without a URL counted as hits; two untested boundaries). All four are fixed and tested.
@@ -58,6 +62,8 @@ Each stage served once through Hermes' real tool path. An invalid key gives HTTP
 
 ## T5 – End-to-end test with a model
 
+History: this test ran on 2026-10-10 with the pre-release code of 0.1.0 (three-stage chain Exa → Parallel → Firecrawl) and was not repeated for 0.2.0 (design T5); the stages added in 0.2.0 are checked live in T2.
+
 **Question.** Does the plugin work when a model drives it, does capping Exa's highlights cost answers or cause more page fetches, and does it matter which Parallel endpoint is called?
 
 **Setup** (2026-10-10, Hermes Desktop 0.21.6)
@@ -71,7 +77,7 @@ Each stage served once through Hermes' real tool path. An invalid key gives HTTP
   | Parallel `/v1/search` | this plugin without an Exa key, Parallel stage on `/v1/search` in mode `advanced` |
   | Parallel beta, built-in | Hermes' built-in Parallel provider: beta endpoint, mode `agentic` |
 
-  When the test ran, the plugin's Parallel stage still called `/v1/search`. Because the beta call did at least as well, the plugin now uses it by default (design D2); that default was then checked live with two questions (`exa=no_key parallel=ok`, both correct).
+  When the test ran, the plugin's Parallel stage still called `/v1/search`. Because the beta call did at least as well, 0.1.0 shipped with it as the default (design D2); that default was then checked live with two questions (`exa=no_key parallel=ok`, both correct).
 - **Model:** GLM 5.3, a general-purpose language model, served through Mistral's API, with reasoning effort `high`; toolsets `web` and `file`; at most 12 steps; memory off. Pages are read through [hermes-extract-chain](https://github.com/Pressimize/hermes-extract-chain) in all setups.
 - **Questions:** 36 in German with a known solution ([questions.csv](../data/end-to-end/questions.csv), with English translations): 10 facts, 10 error messages, 16 "latest released version of X", the version fetched from GitHub right before the run. The instruction asked the model to research on the web, not to answer from memory, to answer in at most three sentences and to name its source. It set no limit on searches.
 - **Procedure:** one round per question with all four setups at the same time, rounds at least 120 s apart, one run per cell, 144 runs. After each round the runner counted the requests per provider from the logs.
@@ -140,7 +146,7 @@ Input tokens by kind of question (sum):
 - One model, one run per cell, 36 questions.
 - The model writes its own search queries in every setup; a difference of one or two questions can come from that.
 - Every run is a new process with a fresh connection to the provider, so the time per search is higher than in a long-running gateway. The comparison between the setups is not affected: same conditions, same moment.
-- Firecrawl as third stage ran only in the fallback checks.
+- Firecrawl, at the time the third stage, ran only in the fallback checks.
 - Judging follows the solution fixed beforehand; for the Hetzner port that is stricter than the matter.
 - Request counts, rates and log times come from the runs' logs, which are not published.
 
