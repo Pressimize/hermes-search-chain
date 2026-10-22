@@ -160,7 +160,7 @@ Parallel is called on its beta endpoint in mode `agentic`, exactly as Hermes' bu
 
 ## Validation
 
-Unit tests without network cover every rule of the chain, the provider calls and the settings. An end-to-end test with a model (36 questions, four setups, 144 runs through Hermes' real tool path) had no failed run, and the intended stage served every search; with an invalid Exa key Parallel served, with invalid Exa and Parallel keys Firecrawl. Not verified: a really used-up quota (HTTP 402 and the 24-hour pause). That test ran with 0.1.0. The stages added in 0.2.0 are checked live through Hermes' real `web_search` path; see [docs/validation.md](docs/validation.md).
+Unit tests without network cover every rule of the chain, the provider calls and the settings. A live check of 0.2.0 through Hermes' real `web_search` path broke one stage after another with invalid keys or addresses, and each of the seven stages after Parallel served once. An end-to-end test with a model ran on 2026-10-10 with the three-stage chain of 0.1.x (36 questions, four setups, 144 runs through Hermes' real tool path): no failed run, and the intended stage served every search; with an invalid Exa key Parallel served, with invalid Exa and Parallel keys Firecrawl (then the third stage). Not verified: a really used-up quota (HTTP 402, Tavily's 432 and 433, and the 24-hour pause).
 
 Setup, judging, all tables, limits and the external code reviews: [docs/validation.md](docs/validation.md). Questions, per-run results and answers: [`data/end-to-end/`](data/end-to-end).
 
@@ -187,7 +187,7 @@ grep -o "search-chain: .*" logs/agent.log | grep -o "[a-z]*=ok" | sort | uniq -c
 
 - **Fixed set of services.** The nine services are built in; the order is a setting (`SEARCH_CHAIN_ORDER`). Another service needs a release.
 - **No results is an error.** If no service finds anything, the model gets an error with `no results` instead of an empty list, because Hermes caches every successful result for `web.cache_ttl_minutes` (default 20).
-- **Different result lengths.** Exa (capped) returns about 4,000 characters per search, Parallel about 8,200, Firecrawl about 3,900. A title is cut at 300 characters and a description at 16,000; a description from Firecrawl is cut at 3,000. In the comparison 26 of Firecrawl's 400 descriptions (6.5 %) were longer than that; cutting them changed no verdict.
+- **Different result lengths.** In the comparison runs of 0.1.x, Exa (capped) returned about 4,000 characters per search, Parallel about 8,200, Firecrawl about 3,900 (extra block only); for the stages added in 0.2.0 no such figure is published. A title is cut at 300 characters and a description at 16,000; a description from Firecrawl is cut at 3,000. In the comparison 26 of Firecrawl's 400 descriptions (6.5 %) were longer than that; cutting them changed no verdict.
 - **At most 20 results per search.** Hermes lets the model ask for up to 100; every service is asked for at most 20, because Exa bills each result above 10 extra.
 - **Result texts are third-party content.** Titles and descriptions reach the model as the services send them, apart from the length bounds above. Hermes marks web search results as untrusted data; the plugin does not filter them.
 - **Parallel's quota replies are not documented.** The chain moves on after any failure; only the 24-hour pause depends on the status code being 402.
@@ -221,14 +221,14 @@ No. `web.extract_backend` is unaffected; see [hermes-extract-chain](https://gith
 uv sync                                   # Python >= 3.11, httpx as in Hermes
 uv run ruff check && uv run ruff format --check
 uv run pytest
-uv run python scripts/recompute.py         # recomputes the tables of the documents; the tests run it
+uv run python scripts/recompute.py         # recomputes the tables of runs 1 and 2 and the end-to-end test; the tests run it
 ```
 
 | Path | Content |
 |---|---|
 | `search_chain/` | The plugin: `provider.py` (Hermes interface, chain, pauses), `engines.py` (REST clients) |
 | `tests/` | Unit tests without network (`httpx.MockTransport`; Hermes is stubbed in `conftest.py`) |
-| `scripts/recompute.py` | Recomputes the tables of the evaluation and validation documents from the CSV files in `data/` |
+| `scripts/recompute.py` | Recomputes the tables of runs 1 and 2 (evaluation) and of the end-to-end test (validation) from the CSV files in `data/` |
 | `scripts/live_check.py` | Calls Hermes' real `web_search` path in a profile, without an LLM and with rate limiting; can break keys to force the fallback (`--break` covers all nine stages; for SearXNG and Degoog it replaces the address) |
 | `docs/` | [evaluation](docs/evaluation.md) (provider choice, test method, results), [design](docs/design.md) (requirements and decisions with their reasons), [validation](docs/validation.md) (tests, reviews, end-to-end test with a model), [reviews](docs/reviews) (points settled in external reviews) |
 | `data/` | Test data as CSV: queries, per-query results of both comparison runs, questions and answers of the end-to-end test ([description](data/README.md)) |

@@ -1,13 +1,17 @@
 # Evaluation: how the providers were chosen
 
-Since 0.2.0 the chain has nine stages: Exa → Parallel → Brave → Nimble → Tavily → You.com → SearXNG → Degoog → Firecrawl. Their order rests on *Benchmark v2* (2026-10-18/19) below. The earlier chain Exa → Parallel → Firecrawl is the result of four steps taken on 2026-10-09 and 2026-10-10 with Hermes Agent 0.21.6; that decision stays here as history, and its numbers still hold for Exa, Parallel and Firecrawl:
+Since 0.2.0 the chain has nine stages: Exa → Parallel → Brave → Nimble → Tavily → You.com → SearXNG → Degoog → Firecrawl. Their order rests on *Benchmark v2* (2026-10-18/19) below and on design D17 to D21.
+
+**History: 0.1.x.** The chain of 0.1.x was Exa → Parallel → Firecrawl. It came out of four steps taken on 2026-10-09 and 2026-10-10 with Hermes Agent 0.21.6. These steps stay here as they were run; their numbers are measurements of that time, and where they speak of "the chain" or "the top three", they mean that three-stage chain. Brave and Tavily, then outside the chain, joined it in 0.2.0.
+
+The four steps were:
 
 1. **Run 1 – provider comparison:** seven search providers exactly as Hermes calls them, 60 queries, without an LLM.
 2. **Run 2 – mode comparison:** the same providers (Firecrawl only on the 20 added queries) plus 13 variants that use better modes or parameters of their APIs, 80 queries, without an LLM.
 3. **Simulation:** would merging the results of several providers help?
 4. **End-to-end test with a model:** the finished plugin in four setups, 36 questions. It is described in [validation.md](validation.md).
 
-Every query, every per-cell score and the first five result URLs of every search are in [`data/`](../data). Titles and snippets returned by the providers are not published.
+For runs 1 and 2 and the end-to-end test, every query, every per-cell score and the first five result URLs of every search are in [`data/`](../data). Titles and snippets returned by the providers are not published.
 
 ## Method of runs 1 and 2
 
@@ -32,7 +36,7 @@ Every query, every per-cell score and the first five result URLs of every search
 
 ## Run 1 – seven providers as Hermes calls them (2026-10-09)
 
-Calls: Exa via its SDK with highlights, Parallel via its SDK on the beta endpoint in mode `agentic`, Firecrawl via its SDK; the four providers outside the chain (TinyFish, Brave, Tavily, Keenable) in their default modes, see *Providers outside the chain*. Data: [run1-results.csv](../data/provider-comparison/run1-results.csv).
+Calls: Exa via its SDK with highlights, Parallel via its SDK on the beta endpoint in mode `agentic`, Firecrawl via its SDK; the four providers outside the 0.1.x chain (TinyFish, Brave, Tavily, Keenable) in their default modes, see *Providers outside the 0.1.x chain*. Data: [run1-results.csv](../data/provider-comparison/run1-results.csv).
 
 | | Exa | Parallel | Firecrawl |
 |---|---|---|---|
@@ -56,7 +60,7 @@ No request failed and no provider returned an empty list.
 
 - **Facts and error messages hardly separate the providers.** With the result pages, every provider gets all 20. The difference is whether the answer is already in the snippet: Exa and Parallel, with long snippets, deliver it there; Firecrawl, with short ones, needs a page fetch afterwards.
 - **Official sources:** Exa, Parallel and Firecrawl find all 15, mostly at rank 1.
-- **Freshness separates them most.** Exa names the current version in all ten snippets, including releases from the day before; Parallel and Firecrawl in nine. The four providers outside the chain often show an older version in the snippet. The result pages themselves almost always carry the current version, so a model that reads the page gets it right; a model that answers from the snippet does not.
+- **Freshness separates them most.** Exa names the current version in all ten snippets, including releases from the day before; Parallel and Firecrawl in nine. The four providers outside the 0.1.x chain often show an older version in the snippet. The result pages themselves almost always carry the current version, so a model that reads the page gets it right; a model that answers from the snippet does not.
 - **Traps:** the pattern check flagged two snippets (Exa and TinyFish for "Hermes Agent v0.35"). Read by hand, neither presents an invented version as real: both are genuine hits for another project with a similar name that does have a v0.35. That is a risk of confusion for a model, not an error of the search.
 - **Context cost differs widely:** about 3,000 tokens per search with Exa and Keenable, about 500 with TinyFish and Brave (at roughly four characters per token).
 
@@ -79,12 +83,12 @@ Hermes calls every provider in a simple mode. Run 2 repeated the baselines and a
 
 \* Firecrawl has no figure of 75 from one run. The 65 is 49 of the 55 (result list, run 1) plus 16 of the 20 on the extra block (run 2). Counted the same way, the baseline calls of Exa and Parallel reach 74 and 70. Because of the day-to-day variation described below, a figure put together from two days is less exact than one from a single run.
 
-- **The order stays.** Exa and Parallel lead, Firecrawl follows on the block it ran, then the four providers outside the chain with a clear gap.
+- **The order of 0.1.x held.** Exa and Parallel led, Firecrawl followed on the block it ran, then the four providers outside the 0.1.x chain with a clear gap.
 - **The extra block separates what the main set did not:** the top three stay at 16 to 19 of 20, the other four fall to 6 to 11.
 - **Day-to-day variation:** between run 1 and run 2, up to 8 of the 45 non-version queries changed per provider. The same baseline call repeated an hour later returned a different list in 4 of 18 cases. A difference of two to four queries between two columns is therefore noise.
 - **Traps:** four flags, read by hand. Three are the v0.35 of the other project again (all three Exa columns); one matched a date on a release-history page (Parallel `/v1/search`, `advanced`). No snippet presented an invented version as real.
 
-**Variants against their baseline** (both sets, 75 queries, result list; pairs = queries only the variant got right : only the baseline). Variants of the other four providers: *Providers outside the chain*.
+**Variants against their baseline** (both sets, 75 queries, result list; pairs = queries only the variant got right : only the baseline). Variants of the other four providers: *Providers outside the 0.1.x chain*.
 
 | Variant | Correct, of 75 | Baseline | Pairs | Verdict by the rules | Characters per search (baseline) | Time per search, median (baseline) |
 |---|---|---|---|---|---|---|
@@ -102,9 +106,9 @@ The times of variants called directly and of baselines called through Hermes are
 - **Exa.** Capping the highlights keeps the hits and the current versions (74 against 73) at a third of the text and the same price. `instant` is cheaper and loses seven queries without winning one, in the same direction in both sets.
 - **Parallel.** Only one result is firm under strict correction: mode `fast` on `/v1/search` is a different product from `fast` on the beta endpoint. It loses on version questions (0 : 15), documentation (0 : 5) and niche topics (0 : 3). Three direct calls per case to both endpoints confirmed that the difference lies in the service. `advanced` on `/v1/search` is close to the beta call (70 against 72). It looked faster here (1.8 s against 2.9 s), but it was called directly and the beta call through Hermes; inside Hermes, in the end-to-end test, both took about 3 s.
 
-## Providers outside the chain
+## Providers outside the 0.1.x chain
 
-TinyFish, Brave, Tavily and Keenable were measured in both runs and with their variants. None made the chain. Same rows as the tables above, with the cost figures of the free-tier table.
+TinyFish, Brave, Tavily and Keenable were measured in both runs and with their variants. None made the chain of 0.1.x. Same rows as the tables above, with the cost figures as read for the free-tier table (2026-10-09 and 2026-10-10; current prices: [README](../README.md#requirements)).
 
 | | TinyFish | Brave | Tavily | Keenable |
 |---|---|---|---|---|
@@ -157,9 +161,9 @@ Before run 2, a script merged the stored result lists of run 1 offline (reciproc
 
 Only 21 of the 55 queries separated the providers at all, and only five results per provider were stored, so a selection step over more candidates could not be simulated. On this evidence, merging and a model that picks results solve a problem the measurements do not show. The plugin therefore chains providers and does not merge.
 
-## Free tiers and costs
+## Free tiers and costs (0.1.x)
 
-As read on the vendors' pages on 2026-10-09 and 2026-10-10; check them before relying on them. Hermes asks a provider for 10 results even when the model wants 5.
+History: the three stages of 0.1.x, as read on the vendors' pages on 2026-10-09 and 2026-10-10. The prices and free allowances of all nine stages, as read on 2026-10-19, are in the [README](../README.md#requirements); check them before relying on them. Hermes asks a provider for 10 results even when the model wants 5.
 
 | Provider | Price per search as called | Free allowance | Free searches per month, roughly | Rate limit |
 |---|---|---|---|---|
@@ -240,18 +244,18 @@ Taking the four ring services in turn gives about 92 queries with the expected d
 
 ## Decision
 
-**0.2.0:** the order, its reasons and what was left out are decisions D17 to D21 in [design.md](design.md); *Benchmark v2* above holds the numbers. The decision for 0.1.x follows as history.
+**Current (since 0.2.0):** the order, its reasons and what was left out are decisions D17 to D21 in [design.md](design.md); *Benchmark v2* above holds the numbers. Still in force from 0.1.x: no merging and no model in the plugin (simulation above, design D10), Exa's highlights capped at 600 characters (run 2; confirmed with a model in [validation.md](validation.md); design D3), and Parallel on the beta endpoint in mode `agentic` (design D2).
 
-**0.1.x:**
+**History: the decision for 0.1.x** (Exa → Parallel → Firecrawl, replaced by D17 in 0.2.0), with the reasons given then:
 
-- **Exa first.** Best or tied for best in both runs (run 1, with result pages: 55 of 55; run 2, result list: 73 of 75), with the current version in the snippet for all 16 version questions of run 2. With highlights capped it returns about half the text of Parallel for the same hits (about as little as Firecrawl), and inside Hermes it was the faster of the two (1.8 s against 3.0 s per search, [validation.md](validation.md)). Being first, it is also the first to use up its free allowance, which is smaller than Parallel's; the chain then carries on with Parallel.
-- **Parallel second.** Not distinguishable from Exa on the hits (run 1, with result pages: 53 of 55; run 2, result list: 72 of 75), also 16 of 16 on current versions, with the largest free allowance of the three. It is called on the beta endpoint in mode `agentic`, as Hermes does: this call was never worse than `/v1/search` in two tests ([design.md](design.md), D2).
-- **Firecrawl third.** In run 1 it got 49 of 55 from the result list (Exa 55, Parallel 52) and 53 of 55 with result pages (Exa 55, Parallel 53), on the extra block 16 of 20 (Exa 19, Parallel 18), with the current version in all six of its version questions there. Against Exa in run 1, Exa alone was right on 6 queries from the result list (p 0.03: below 0.05, but far from the 0.003 of the strict correction) and on 2 with result pages (p 0.5). Four of its six misses from the result list are error messages whose fix is only on the result page: its snippets are short. From the result list it scored lowest of the three, and it is ahead of the other four. Its free allowance is the smallest of the three and shared with scraping, so the chain spares it: it is the last resort.
-- **Not in the chain:** TinyFish is free and finds official documentation well, but its snippets often show an older version (6 of 16 current in run 2), and it falls behind on the harder block (11 of 20). Brave improves a lot with the LLM Context endpoint but stays behind the top three and needs a credit card. Tavily and Keenable often miss the official source and show old versions.
-- **No merging and no model in the plugin** (simulation above).
-- **Highlights capped at 600 characters** (run 2; confirmed with a model in [validation.md](validation.md)).
+- **Exa first.** Best or tied for best in both runs (run 1, with result pages: 55 of 55; run 2, result list: 73 of 75), with the current version in the snippet for all 16 version questions of run 2. With highlights capped it returned about half the text of Parallel for the same hits (about as little as Firecrawl), and inside Hermes it was the faster of the two (1.8 s against 3.0 s per search, [validation.md](validation.md)). Being first, it was also the first to use up its free allowance, which is smaller than Parallel's; the chain then carried on with Parallel.
+- **Parallel second.** Not distinguishable from Exa on the hits (run 1, with result pages: 53 of 55; run 2, result list: 72 of 75), also 16 of 16 on current versions, with the largest free allowance of the three. It was called on the beta endpoint in mode `agentic`, as Hermes does: this call was never worse than `/v1/search` in two tests ([design.md](design.md), D2).
+- **Firecrawl third.** In run 1 it got 49 of 55 from the result list (Exa 55, Parallel 52) and 53 of 55 with result pages (Exa 55, Parallel 53), on the extra block 16 of 20 (Exa 19, Parallel 18), with the current version in all six of its version questions there. Against Exa in run 1, Exa alone was right on 6 queries from the result list (p 0.03: below 0.05, but far from the 0.003 of the strict correction) and on 2 with result pages (p 0.5). Four of its six misses from the result list were error messages whose fix is only on the result page: its snippets are short. From the result list it scored lowest of the three, and it was ahead of the other four. Its free allowance was the smallest of the three and shared with scraping, so the chain spared it as the last resort.
+- **Not in the chain of 0.1.x:** TinyFish is free and found official documentation well, but its snippets often showed an older version (6 of 16 current in run 2), and it fell behind on the harder block (11 of 20). Brave improved a lot with the LLM Context endpoint but stayed behind the top three and needs a credit card. Tavily and Keenable often missed the official source and showed old versions. Brave and Tavily joined the chain in 0.2.0, on the broader *Benchmark v2* (design D17).
 
 ## Limits of this evaluation
+
+The limits of *Benchmark v2* are listed in its own section above.
 
 - Runs 1 and 2: one run per configuration, two days, 75 scored queries on technical topics, mostly in English. Only large gaps are firm; the ranking within the top three is not.
 - Providers change their indexes and defaults; the numbers describe October 2026.
@@ -261,4 +265,4 @@ Taking the four ring services in turn gives about 92 queries with the expected d
 
 ## Data files
 
-Every query, score and result is in [`data/`](../data); the files and their columns are described in [`data/README.md`](../data/README.md). [`scripts/recompute.py`](../scripts/recompute.py) recomputes the totals, the paired comparisons and their p values in this document from them.
+Every query, score and result of runs 1 and 2 is in [`data/`](../data); the files and their columns are described in [`data/README.md`](../data/README.md). [`scripts/recompute.py`](../scripts/recompute.py) recomputes the totals, the paired comparisons and their p values of runs 1 and 2 in this document from them. The raw data of *Benchmark v2* is not published, so its numbers cannot be recomputed from `data/`.

@@ -2,7 +2,9 @@
 
 The measurements behind [docs/evaluation.md](../docs/evaluation.md) and [docs/validation.md](../docs/validation.md), as CSV files (UTF-8, comma-separated, one header line).
 
-`python scripts/recompute.py` recomputes the headline tables of both documents from these files.
+`python scripts/recompute.py` recomputes the headline tables of runs 1 and 2 and of the end-to-end test from these files.
+
+All files here belong to the work on 0.1.x (chain Exa → Parallel → Firecrawl). *Benchmark v2* (2026-10-18/19), on which the order of 0.2.0 rests, is not in these files: its raw data is not published, only the totals in docs/evaluation.md.
 
 **Not published:** the titles and snippets the search providers returned, and the pages fetched for the "with result pages" scoring. They are third-party content. Published are the queries, the URLs of the first five results, sizes, times and scores.
 
@@ -42,7 +44,7 @@ The latest release of each project in the `current` queries, fetched from GitHub
 
 ## `end-to-end/`
 
-The plugin driven by a model, 2026-10-10: 36 questions, four setups, one run each.
+The plugin driven by a model, 2026-10-10, with the three-stage chain of 0.1.x: 36 questions, four setups, one run each.
 
 | File | Rows | Content |
 |---|---|---|

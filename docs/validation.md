@@ -17,7 +17,9 @@ How the plugin was checked against [design.md](design.md). Requirement IDs refer
 
 ## T2 – Live check through Hermes
 
-`scripts/live_check.py` calls Hermes' real `web_search` tool function in a profile with the plugin installed, without a model. Run on 2026-10-10 with Hermes Desktop 0.21.6:
+`scripts/live_check.py` calls Hermes' real `web_search` tool function in a profile with the plugin installed, without a model.
+
+**Three-stage chain of 0.1.x** (Exa → Parallel → Firecrawl), run on 2026-10-10 with Hermes Desktop 0.21.6:
 
 | Mode | Log line of the plugin | Rows | Time per search |
 |---|---|---|---|
@@ -44,6 +46,8 @@ Each stage served once through Hermes' real tool path. An invalid key gives HTTP
 
 ## T3 – Reviews
 
+The first four points concern the development of 0.1.0.
+
 - **Plan against design, before coding.** Taken over: no empty success (K6), pauses only after HTTP 402 and 429 (K5), and a live check that refuses to run while the keyless rescue is on.
 - **Code against design, after coding,** by an independent reviewer who also ran 21 single-line mutations of the code against the tests (19 caught). It found one real bug (a setting value longer than Python's integer-parsing limit failed the whole call) and three gaps (results without a URL counted as hits; two untested boundaries). All four are fixed and tested.
 - **Smoke test against the real Hermes classes** (Hermes Desktop 0.21.6, Python 3.14): the provider instantiates against the real base class, reads keys through Hermes, and returned ten rows in the required shape from a live Firecrawl search.
@@ -57,6 +61,8 @@ Each stage served once through Hermes' real tool path. An invalid key gives HTTP
 `ruff check` and `ruff format --check` are clean. GitHub Actions runs both and the tests on Python 3.11 and 3.14, for pull requests and for pushes to `main`. The tests include a run of `scripts/recompute.py` (`tests/test_recompute.py`); the script recomputes the tables, and CI checks that it runs, not the figures.
 
 ## T5 – End-to-end test with a model
+
+History: this test ran on 2026-10-10 with the three-stage chain of 0.1.x (Exa → Parallel → Firecrawl) and was not repeated for 0.2.0 (design T5); the stages added in 0.2.0 are checked live in T2.
 
 **Question.** Does the plugin work when a model drives it, does capping Exa's highlights cost answers or cause more page fetches, and does it matter which Parallel endpoint is called?
 
@@ -140,7 +146,7 @@ Input tokens by kind of question (sum):
 - One model, one run per cell, 36 questions.
 - The model writes its own search queries in every setup; a difference of one or two questions can come from that.
 - Every run is a new process with a fresh connection to the provider, so the time per search is higher than in a long-running gateway. The comparison between the setups is not affected: same conditions, same moment.
-- Firecrawl as third stage ran only in the fallback checks.
+- Firecrawl, at the time the third stage, ran only in the fallback checks.
 - Judging follows the solution fixed beforehand; for the Hetzner port that is stricter than the matter.
 - Request counts, rates and log times come from the runs' logs, which are not published.
 
