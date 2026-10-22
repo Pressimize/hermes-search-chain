@@ -189,7 +189,7 @@ def test_exa_serves_and_nothing_else_is_asked(env, logs):
 
 
 def test_query_reaches_every_stage(env):
-    """K1, A1-A3: each stage is asked the query as given."""
+    """K1, A1-A3: Exa, Parallel and Firecrawl are asked the query as given (the other stages: test_engines.py)."""
     api = Api(exa=empty, parallel=empty, firecrawl=empty)
     chain(api).search("what is x")
     exa, parallel, firecrawl = (json.loads(request.content) for request in api.requests)

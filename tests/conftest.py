@@ -56,7 +56,7 @@ MORE = {
 
 @pytest.fixture
 def env():
-    """All three keys set; tests may delete or replace entries."""
+    """The keys of Exa, Parallel and Firecrawl set (KEYS); tests may delete or replace entries."""
     ENV.clear()
     ENV.update(KEYS)
     yield ENV
