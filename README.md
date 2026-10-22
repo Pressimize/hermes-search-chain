@@ -40,7 +40,7 @@ In a benchmark of 177 queries (2026-10-18/19), two LLM judges scored whether the
 - **Brave, Nimble, Tavily, then You.com.** Brave, Nimble, Tavily and SearXNG do not differ significantly in the answer rate, so reliability and cost decide. You.com is significantly below Brave.
 - **Services with a key before self-hosted ones.** A service with a key reports a used-up quota or a wrong key as an HTTP error, and the chain moves on. A self-hosted metasearch whose upstream engines block it returns weaker hits without an error, and the chain stops there. Late in the chain it is asked rarely.
 - **SearXNG before Degoog.** Its answer rate is significantly better (131 against 124).
-- **Firecrawl last.** Its free credits are shared with page extraction. For technical questions it may still be the better third stage; the order is a setting (see *Settings*).
+- **Firecrawl last.** Its free credits are shared with page extraction. For technical questions it may still deserve third place, right after Parallel; the order is a setting (see *Settings*).
 
 Method, tables, significance tests and the services that did not make the chain: [docs/evaluation.md](docs/evaluation.md). The decisions with their reasons: [docs/design.md](docs/design.md), D17 to D21.
 
